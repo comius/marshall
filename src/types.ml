@@ -74,7 +74,8 @@ struct
 	| S.Forall (x, i, e) -> Forall (x, i, sigma e)	  
 	| _ -> error ("typecheck " ^ S.string_of_expr e)
   and convert e = match e with
-	| S.Tuple _ | S.Proj _ | S.Lambda _ | S.App _ | S.Let _ -> Uncompiled e
+	| S.Proj _ | S.Lambda _ | S.App _ | S.Let _ -> Uncompiled e
+	| S.Tuple lst -> Tuple (List.map convert lst)
 	| S.True _ | S.False _ | S.Less _ | S.And _ | S.Or _ | S.Exists _ | S.Forall _ as e -> Sigma(sigma e)
         | S.Var _ | S.Dyadic _ | S.Cut _ | S.Binary _ | S.Unary _ | S.Power _ as e -> Real(arithmetic e)	
 
