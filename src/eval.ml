@@ -4,7 +4,7 @@ struct
   module I = Interval.Make(D)
   module Env = Environment.Make(D)
   module S = Syntax.Make(D)
-(*  module N = Newton.Make(D)*)
+  module N = Newton.Make(D)
   module R = Region.Make(D)
   module A = Approximate.Make(D)
   module T = Types.Make(D)
@@ -190,18 +190,18 @@ struct
 	              A.fold_or (fun i -> make_exists x i q) [i1; i2])*)
 	      let i1, i2 = I.split prec 1 i in
 		(* Newton's method *)
-	     (* let (a1, b1) = N.estimate k prec env x i1 q in
+	      let (a1, b1) = N.estimate k prec env x i1 q in
 
 (*	      print_endline ("Exists: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (R.to_string a1) ^ (R.to_string b1));*)
 	      if R.is_inhabited b1 then
 		(* We could collect [b1] as a witness here. *)
-		S.True
+		T.True
 	      else
 		let (a2, b2) = N.estimate k prec env x i2 q in
 (*		  print_endline ("Exists: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (R.to_string a2) ^ (R.to_string b2));*)
 		  if R.is_inhabited b2 then
 		    (* We could collect [b2] as a witness here. *)
-		    S.True
+		    T.True
 		  else
 		    let lst1 = R.to_closed_intervals
 		      (R.closure
@@ -216,8 +216,8 @@ struct
 			    (R.complement a2)))
 		    in
 		      A.fold_or (fun i -> make_exists x i q) (lst1 @ lst2)
-		*)
-	      A.fold_or (fun i -> make_exists x i q) [i1; i2]
+		
+	      (*A.fold_or (fun i -> make_exists x i q) [i1; i2]*)
 
 	  | T.Forall (x, i, p) ->
 	      let prec = make_prec prec i in
@@ -237,7 +237,7 @@ struct
 	       let i1, i2 = I.split prec 1 i in
 
 		(* Newton's method *)
-              (*let (a1, b1) = N.estimate k prec env x i1 q in
+              let (a1, b1) = N.estimate k prec env x i1 q in
 (*	      print_endline ("Forall: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (R.to_string a1) ^ (R.to_string b1));*)
 	      if R.is_inhabited a1 then
 		(* We could take [a1] as witness for quantifier being false. *)
@@ -261,9 +261,9 @@ struct
 			    (R.of_interval i2)
 			    (R.complement b2)))
 		    in
-		      A.fold_and (fun i -> make_forall x i q) (lst1 @lst2)*)
+		      A.fold_and (fun i -> make_forall x i q) (lst1 @lst2)
 
-              A.fold_and (fun i -> make_forall x i q) [i1; i2]	  
+              (*A.fold_and (fun i -> make_forall x i q) [i1; i2]	  *)
 	  
 	and
   refinea k prec env e =
@@ -289,11 +289,8 @@ struct
 
 
 	      let j = I.make a' b' in 
-let env' = Env.extend x (T.RealVar (x, j)) env in	    	 
-  let q1 = refine k prec env' p1 in
-		    let q2 = refine k prec env' p2 in
-T.Cut (x, j, q1, q2)
-	      (*	(* Newton's method *)
+
+	      	(* Newton's method *)
 	      let (r1, r2) = N.estimate k prec env x j p1 in
 	      let (s1, s2) = N.estimate k prec env x j p2 in
       	      let a'' = D.max a' (D.max (R.supremum r2) (R.supremum s1)) in
@@ -302,21 +299,21 @@ T.Cut (x, j, q1, q2)
 		  | `less ->
 		      (* The new interval *)
 		    let l = I.make a'' b'' in	      	    
-		    let env' = Env.extend x (S.RealVar (x, l)) env in
+		    let env' = Env.extend x (T.RealVar (x, l)) env in
 		    let q1 = refine k prec env' p1 in
 		    let q2 = refine k prec env' p2 in
 (*		    print_endline ("Cut: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (I.to_string j) ^ (I.to_string l) ^ (S.string_of_expr q1) ^ (S.string_of_expr q2));*)
-		      S.Cut (x, l, q1, q2)
+		      T.Cut (x, l, q1, q2)
 		  | `equal ->
 		      (* We found an exact value *)
-		    S.Dyadic a'
+		    T.Dyadic a'
 		  | `greater ->
 		      (* We have a backwards cut. Do nothing. Someone should think
 			 whether this is ok. It would be nice if cuts could be
 			 overlapping, but I have not thought whether this would break
 			 anything else.
 		      *)
-		    e*)
+		    e
 	    end
 	  
   (** [eval prec env e] evaluates expression [e] in environment [env] by
