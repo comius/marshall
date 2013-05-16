@@ -19,12 +19,8 @@ struct
     | Var x ->
 	(try
 	   List.assoc x ctx
-	 with Not_found -> error ("Unknown variable " ^ string_of_name x))
-    | RealVar (x, _) ->
-	error ("Typechecking encountered areal variable " ^ string_of_name x ^
-		 ". This should not happen")
-    | Dyadic _ -> Ty_Real
-    | Interval _ -> Ty_Real
+	 with Not_found -> error ("Unknown variable " ^ string_of_name x))    
+    | Dyadic _ -> Ty_Real    
     | Cut (x, i, p1, p2) ->
 	check_segment i ;
 	check ((x, Ty_Real)::ctx) Ty_Sigma p1 ;
