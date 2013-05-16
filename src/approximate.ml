@@ -4,17 +4,7 @@ struct
   module I = Interval.Make(D)
   module Env = Environment.Make(D)  
   module T = Types.Make(D)
-  module S' = Syntax.Make(D)
-
-  let error = Message.runtime_error
-
-  let proj e k =
-    match e with
-      | T.Tuple lst ->
-         (try
-            List.nth lst k
-          with Failure _ -> error "Tuple too short")
-      | _ -> error "Tuple expected"
+  module S = Syntax.Make(D)  
 
   (* Apply a binary artithmetical operator with precision [prec]. The
      rounding mode, which is [Dyadic.down] or [Dyadic.up] tells whether
@@ -22,19 +12,19 @@ struct
 
   let bin_apply ~prec ~round op i1 i2 =
     match op with
-      | S'.Plus -> I.add ~prec ~round i1 i2
-      | S'.Minus -> I.sub ~prec ~round i1 i2
-      | S'.Times -> I.mul ~prec ~round i1 i2
-      | S'.Quotient -> I.div ~prec ~round i1 i2
+      | S.Plus -> I.add ~prec ~round i1 i2
+      | S.Minus -> I.sub ~prec ~round i1 i2
+      | S.Times -> I.mul ~prec ~round i1 i2
+      | S.Quotient -> I.div ~prec ~round i1 i2
 
   (* Apply a unary operator, see [bin_apply] for explanation of [prec]
      and [round]. *)
 
   let unary_apply ~prec ~round op i =
     match op with
-      | S'.Opposite -> I.neg ~prec ~round i
-      | S'.Inverse -> I.inv ~prec ~round i
-	  (*| Exp -> I.exp ~prec ~round i*)
+      | S.Opposite -> I.neg ~prec ~round i
+      | S.Inverse -> I.inv ~prec ~round i
+	  (*| S.Exp -> I.exp ~prec ~round i*)
 
   (* [Break] is used to shortcircuit evaluation of conjunctions and
      disjunctions. *)
