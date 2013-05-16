@@ -2,32 +2,15 @@ module Make = functor (D : Dyadic.DYADIC) ->
 struct
 
   module I = Interval.Make(D)
-  module Env = Environment.Make(D)
-  module S = Syntax.Make(D)
+  module Env = Environment.Make(D)  
+  module T = Types.Make(D)
+  module S' = Syntax.Make(D)
 
   let error = Message.runtime_error
 
-  (* \subsection{Auxiliary functions} *)
-
-  (* Get the interval approximation of a simple numerical expression. *)
-
-  let get_interval = function
-    | S.Interval i -> i
-    | S.Dyadic q -> I.of_dyadic q
-    | S.Cut (_, i, _, _) -> i
-    | e -> error ("Numerical constant expected but got " ^ S.string_of_expr e)
-
-  (* Get the bound variable and the matrix of an abstraction. *)
-
-  let get_lambda = function
-    | S.Lambda (x, _, e) -> x, e
-    | _ -> error "Function expected"
-
-  (* Project from a tuple. *)
-
   let proj e k =
     match e with
-      | S.Tuple lst ->
+      | T.Tuple lst ->
          (try
             List.nth lst k
           with Failure _ -> error "Tuple too short")
@@ -39,18 +22,18 @@ struct
 
   let bin_apply ~prec ~round op i1 i2 =
     match op with
-      | S.Plus -> I.add ~prec ~round i1 i2
-      | S.Minus -> I.sub ~prec ~round i1 i2
-      | S.Times -> I.mul ~prec ~round i1 i2
-      | S.Quotient -> I.div ~prec ~round i1 i2
+      | S'.Plus -> I.add ~prec ~round i1 i2
+      | S'.Minus -> I.sub ~prec ~round i1 i2
+      | S'.Times -> I.mul ~prec ~round i1 i2
+      | S'.Quotient -> I.div ~prec ~round i1 i2
 
   (* Apply a unary operator, see [bin_apply] for explanation of [prec]
      and [round]. *)
 
   let unary_apply ~prec ~round op i =
     match op with
-      | S.Opposite -> I.neg ~prec ~round i
-      | S.Inverse -> I.inv ~prec ~round i
+      | S'.Opposite -> I.neg ~prec ~round i
+      | S'.Inverse -> I.inv ~prec ~round i
 	  (*| Exp -> I.exp ~prec ~round i*)
 
   (* [Break] is used to shortcircuit evaluation of conjunctions and
@@ -67,15 +50,15 @@ struct
       | [] -> acc
       | p::ps ->
 	  (match f p with
-	     | S.True -> fold acc ps
-	     | S.False -> raise Break
+	     | T.True -> fold acc ps
+	     | T.False -> raise Break
 	     | q -> fold (q::acc) ps)
     in
       try
 	match fold [] lst with
-	  | [] -> S.True
-	  | lst -> S.And (List.rev lst)
-      with Break -> S.False
+	  | [] -> T.True
+	  | lst -> T.And (List.rev lst)
+      with Break -> T.False
 
   (* [fold_or f [x1,...,xn]] constructs the disjunction [Or [f x1;
      ..., f xn]]. It throws out [False]'s and shortcircuits on
@@ -86,15 +69,15 @@ struct
       | [] -> acc
       | p::ps ->
 	  (match f p with
-	     | S.True -> raise Break
-	     | S.False -> fold acc ps
+	     | T.True -> raise Break
+	     | T.False -> fold acc ps
 	     | q -> fold (q::acc) ps)
     in
       try
 	match fold [] lst with
-	  | [] -> S.False
-	  | lst -> S.Or (List.rev lst)
-      with Break -> S.True
+	  | [] -> T.False
+	  | lst -> T.Or (List.rev lst)
+      with Break -> T.True
 
 
   (* \subsection{Approximants} *)
@@ -105,47 +88,42 @@ struct
 
   let rec lower prec env e =
     let approx = lower prec env in
-      match e with
-	| S.Var x -> approx (Env.get x env)
-	| S.RealVar (_, i) -> S.Interval i
-	| S.Dyadic q -> S.Interval (I.of_dyadic q)
-	| S.Interval _ as e -> e
-	| S.Cut (_, i, _, _) -> S.Interval i
-	| S.Binary (op, e1, e2) ->
-	    let i1 = get_interval (approx e1) in
-	    let i2 = get_interval (approx e2) in
-	      S.Interval (bin_apply ~prec ~round:D.down op i1 i2)
-	| S.Unary (op, e) ->
-	    let i = get_interval (approx e) in
-	      S.Interval (unary_apply ~prec ~round:D.down op i)
-	| S.Power (e, k) ->
-	    let i = get_interval (approx e) in
-	      S.Interval (I.pow ~prec ~round:D.down i k)
-	| S.True -> S.True
-	| S.False -> S.False
-	| S.Less (e1, e2) ->
-	    let i1 = get_interval (approx e1) in
-	    let i2 = get_interval (approx e2) in
+      match e with	
+	| T.True -> T.True
+	| T.False -> T.False
+	| T.Less (e1, e2) ->
+	    let i1 = lowera prec env e1 in
+	    let i2 = lowera prec env e2 in
 	      if D.lt (I.upper i1) (I.lower i2) then
-		S.True
+		T.True
 	      else
-		S.False
-	| S.And lst -> fold_and approx lst
-	| S.Or lst -> fold_or approx lst
-	| S.Exists (x, s, e) ->
-	    let m = S.Dyadic (I.midpoint prec 1 s) in
+		T.False
+	| T.And lst -> fold_and approx lst
+	| T.Or lst -> fold_or approx lst
+	| T.Exists (x, s, e) ->
+	    let m = T.Dyadic (I.midpoint prec 1 s) in
 	      lower prec (Env.extend x m env) e
-	| S.Forall (x, i, e) ->
-	    lower prec (Env.extend x (S.Interval i) env) e
-	| S.Let (x, e1, e2) ->
-	    lower prec (Env.extend x (approx e1) env) e2
-	| S.Tuple _ as e -> e
-	| S.Proj (e, k) -> proj (approx e) k
-	| S.Lambda _ as e -> e
-	| S.App (e1, e2) ->
-	    let x, e = get_lambda (approx e1) in
-	      lower prec (Env.extend x (approx e2) env) e
-
+	| T.Forall (x, i, e) ->
+	    lower prec (Env.extend x (T.Interval i) env) e	
+  and
+  lowera prec env e =
+    let approx = lowera prec env in
+      match e with
+	| T.Var x -> approx (Env.get x env)
+	| T.RealVar (_, i) -> i
+	| T.Dyadic q -> I.of_dyadic q
+	| T.Interval i -> i
+	| T.Cut (_, i, _, _) -> i
+	| T.Binary (op, e1, e2) ->
+	    let i1 = approx e1 in
+	    let i2 = approx e2 in
+	      bin_apply ~prec ~round:D.down op i1 i2
+	| T.Unary (op, e) ->
+	    let i = approx e in
+	      unary_apply ~prec ~round:D.down op i
+	| T.Power (e, k) ->
+	    let i = approx e in
+	      I.pow ~prec ~round:D.down i k
 
   (* Function [upper prec env e] computes the upper approximant of [e]
      in environment [env], computing arithmetical expressions with
@@ -153,46 +131,42 @@ struct
 
   let rec upper prec env e =
     let approx = upper prec env in
-      match e with
-	| S.Var x -> approx (Env.get x env)
-	| S.RealVar (_, i) -> S.Interval (I.flip i)
-	| S.Dyadic q -> S.Interval (I.of_dyadic q)
-	| S.Interval _ as e -> e
-	| S.Cut (_, i, _, _) -> S.Interval (I.flip i)
-	| S.Binary (op, e1, e2) ->
-	    let i1 = get_interval (approx e1) in
-	    let i2 = get_interval (approx e2) in
-	      S.Interval (bin_apply ~prec ~round:D.up op i1 i2)
-	| S.Unary (op, e) ->
-	    let i = get_interval (approx e) in
-	      S.Interval (unary_apply ~prec ~round:D.up op i)
-	| S.Power (e, k) ->
-	    let i = get_interval (approx e) in
-	      S.Interval (I.pow ~prec ~round:D.up i k)
-	| S.True -> S.True
-	| S.False -> S.False
-	| S.Less (e1, e2) ->
-	    let i1 = get_interval (approx e1) in
-	    let i2 = get_interval (approx e2) in
+      match e with	
+	| T.True -> T.True
+	| T.False -> T.False
+	| T.Less (e1, e2) ->
+	    let i1 = uppera prec env e1 in
+	    let i2 = uppera prec env e2 in
 	      if D.lt (I.upper i1) (I.lower i2) then
-		S.True
+		T.True
 	      else
-		S.False
-	| S.And lst -> fold_and approx lst
-	| S.Or lst -> fold_or approx lst
-	| S.Exists (x, i, e) ->
+		T.False
+	| T.And lst -> fold_and approx lst
+	| T.Or lst -> fold_or approx lst
+	| T.Exists (x, i, e) ->
 	    let j = I.flip i in
-	      upper prec (Env.extend x (S.Interval j) env) e
-	| S.Forall (x, i, e) ->
-	    let m = S.Dyadic (I.midpoint prec 1 i) in
-	      upper prec (Env.extend x m env) e
-	| S.Let (x, e1, e2) ->
-	    upper prec (Env.extend x e1 env) e2
-	| S.Tuple _ as e -> e
-	| S.Proj (e, k) -> proj (approx e) k
-	| S.Lambda _ as e -> e
-	| S.App (e1, e2) ->
-	    let x, e = get_lambda (approx e1) in
-	      upper prec (Env.extend x (approx e2) env) e
-
+	      upper prec (Env.extend x (T.Interval j) env) e
+	| T.Forall (x, i, e) ->
+	    let m = T.Dyadic (I.midpoint prec 1 i) in
+	      upper prec (Env.extend x m env) e	
+and
+  uppera prec env e =
+    let approx = uppera prec env in
+      match e with
+	| T.Var x -> approx (Env.get x env)
+	| T.RealVar (_, i) -> I.flip i
+	| T.Dyadic q -> I.of_dyadic q
+	| T.Interval i -> i
+	| T.Cut (_, i, _, _) -> I.flip i
+	| T.Binary (op, e1, e2) ->
+	    let i1 = approx e1 in
+	    let i2 = approx e2 in
+	      bin_apply ~prec ~round:D.up op i1 i2
+	| T.Unary (op, e) ->
+	    let i = approx e in
+	      unary_apply ~prec ~round:D.up op i
+	| T.Power (e, k) ->
+	    let i = approx e in
+	      I.pow ~prec ~round:D.up i k
+	
 end;;

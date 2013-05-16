@@ -5,9 +5,10 @@
 
 module Make = functor (D : Dyadic.DYADIC) ->
 struct
+  module T = Types.Make(D)
   module S = Syntax.Make(D)
     
-  type environment = (S.name * S.expr) list
+  type environment = (S.name * T.arithmetic) list
       
   (* Get [x] in environment [env]. *)
   let get x env =

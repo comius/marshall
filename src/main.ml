@@ -85,7 +85,7 @@ let help_text = "Toplevel commands:
 	(try
 	   let ty = TC.type_of ctx e in
 	   let v1, v2 = E.eval trace env e in
-	     print_endline ("- : " ^ E.S.string_of_type ty ^ " = " ^ E.S.string_of_expr v2) ;
+	     print_endline ("- : " ^ E.S.string_of_type ty ^ " = " ^ E.T.string_of_expr v2) ;
 	     (ctx, env)
 	 with error -> (Message.report error; (ctx, env)))
     | E.S.Definition (x, e) ->
@@ -93,7 +93,7 @@ let help_text = "Toplevel commands:
 	   let ty = TC.type_of ctx e in
 	   let v1, v2 = E.eval false env e in
 	     print_endline
-	       (E.S.string_of_name x ^ " : " ^ E.S.string_of_type ty ^ " = " ^ E.S.string_of_expr v2) ;
+	       (E.S.string_of_name x ^ " : " ^ E.S.string_of_type ty ^ " = " ^ E.T.string_of_expr v2) ;
 	     ((x,ty)::ctx, E.Env.extend x v1 env)
 	 with error -> (Message.report error; (ctx, env)))
     | E.S.Precision q ->
