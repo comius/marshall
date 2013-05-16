@@ -171,7 +171,7 @@ struct
       else if A.upper prec env e = T.False then T.False
       else
 	match e with
-| T.True -> T.True
+	  | T.True -> T.True
 	  | T.False -> T.False
 	  | T.Less (e1, e2) -> T.Less (refinea k prec env  e1, refinea k prec env e2)
 	  | T.And lst -> A.fold_and refn lst
