@@ -61,10 +61,8 @@ struct
 
   (** The abstract syntax of Marshall terms. *)
   type expr =
-    | Var of name (* variable *)
-    | RealVar of name * I.t (* real variable with a given range, see [Eval.refine] *)
+    | Var of name (* variable *)    
     | Dyadic of D.t (* dyadic constant, syntax as in MPFR (subsumes floating-point) *)
-    | Interval of I.t (* interval constant, no concrete syntax *)
     | Cut of name * I.t * expr * expr
 	(* [Cut (x, [a, b], l, u)] is the real number in interval
 	   $[a,b]$ whose lower cut is $\lambda x, l$ and upper cut is
@@ -121,10 +119,8 @@ struct
     let rec to_str n e =
       let (m, str) =
 	match e with
-	  | Var x   ->           (100, string_of_name x)
-	  | RealVar (x, i) ->    (100, "(" ^ string_of_name x ^ ":" ^ I.to_string i ^ ")")
-	  | Dyadic q ->          (100, D.to_string q)
-	  | Interval i ->        (100, I.to_string_number i)
+	  | Var x   ->           (100, string_of_name x)	  
+	  | Dyadic q ->          (100, D.to_string q)	  
 	  | True | And [] ->     (100, "True")
 	  | False | Or [] ->     (100, "False")
 	  | Tuple lst ->         (100, "(" ^ (String.concat ", " (List.map (to_str 10) lst)) ^ ")")

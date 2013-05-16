@@ -55,10 +55,8 @@ struct
       | _ -> error "Tuple expected"
 
   let rec arithmetic e = match e with
-	| S.Var x -> Var x
-	| S.RealVar(x,i) -> RealVar(x,i)
-	| S.Dyadic d -> Dyadic d
-	| S.Interval i -> Interval i
+	| S.Var x -> Var x	
+	| S.Dyadic d -> Dyadic d	
 	| S.Cut (x, i, p1, p2) ->	    
 	      Cut (x, i, sigma p1, sigma p2)
 	| S.Binary (op, e1, e2) -> Binary (op, arithmetic e1, arithmetic e2)
@@ -78,7 +76,7 @@ struct
   and convert e = match e with
 	| S.Tuple _ | S.Proj _ | S.Lambda _ | S.App _ | S.Let _ -> Uncompiled e
 	| S.True _ | S.False _ | S.Less _ | S.And _ | S.Or _ | S.Exists _ | S.Forall _ as e -> Sigma(sigma e)
-        | S.Var _ | S.RealVar _ | S.Dyadic _ | S.Interval _ | S.Cut _ | S.Binary _ | S.Unary _ | S.Power _ as e -> Real(arithmetic e)	
+        | S.Var _ | S.Dyadic _ | S.Cut _ | S.Binary _ | S.Unary _ | S.Power _ as e -> Real(arithmetic e)	
 
  (** Convert a string to expression *)
   let rec string_of_expr e =

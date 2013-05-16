@@ -67,7 +67,7 @@ struct
 
     let rec free_in y e = match e with
 	| S.Var x -> x = y
-	| S.RealVar _ | S.Dyadic _ | S.Interval _ | S.True | S.False -> false
+	| S.Dyadic _ | S.True | S.False -> false
 	| S.Cut (x, i, p1, p2) -> x<>y && (free_in y p1 || free_in y p2)
 	| S.Binary (op, e1, e2) -> free_in y e1 || free_in y e2
 	| S.Unary (op, e) -> free_in y e 
@@ -119,7 +119,7 @@ struct
 	       List.assoc x env
 	     with Not_found ->
 	       if free then S.Var x else error ("Unknown variable " ^ S.string_of_name x))
-	| (S.RealVar _ | S.Dyadic _ | S.Interval _ | S.True | S.False) as e -> e
+	| (S.Dyadic _ | S.True | S.False) as e -> e
 	| S.Cut (x, i, p1, p2) ->
 	    let x', p1', p2' = alpha2 x env p1 p2 in
 	    let env' = Env.extend x' (S.Var x') env in		  
