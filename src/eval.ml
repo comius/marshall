@@ -4,9 +4,10 @@ struct
   module I = Interval.Make(D)
   module Env = Environment.Make(D)
   module S = Syntax.Make(D)
-  module N = Newton.Make(D)
+(*  module N = Newton.Make(D)*)
   module R = Region.Make(D)
   module A = Approximate.Make(D)
+  module T = Types.Make(D)
 
   let error = Message.runtime_error
 
@@ -31,12 +32,12 @@ struct
 
   let make_exists x i p =
     assert (I.forward i) ;
-    if p = S.True then
-      S.True
-    else if p = S.False then
-      S.False
+    if p = T.True then
+      T.True
+    else if p = T.False then
+      T.False
     else
-      S.Exists (x, i, p)
+      T.Exists (x, i, p)
 
   (* [make_forall x i p] constructs the universal quantifier [Forall (x,i,p)]
      over an inhabited interval [i]. If [p] is [True] or [False] it shortcircuits
@@ -44,12 +45,12 @@ struct
 
   let make_forall x i p =
     assert (I.forward i) ;
-    if p = S.True then
-      S.True
-    else if p = S.False then
-      S.False
+    if p = T.True then
+      T.True
+    else if p = T.False then
+      T.False
     else
-      S.Forall (x, i, p)
+      T.Forall (x, i, p)
 
 
   (* \subsection{Evaluation} *)
@@ -73,7 +74,7 @@ struct
 	| S.Power (e, k) -> free_in y e
 	| S.Proj (e, k) ->
 	    (match  e with
-	       | S.Tuple _ as e' -> free_in y (A.proj e' k)
+	       | S.Tuple _ as e' -> free_in y (T.proj e' k)
 	       | e' -> free_in y e)
 	| S.Less (e1, e2) -> free_in y e1 || free_in y e2
 	| S.And lst -> List.fold_left (fun p e -> p || free_in y e) false lst
@@ -128,7 +129,7 @@ struct
 	| S.Power (e, k) -> S.Power (hnf env e, k)
 	| S.Proj (e, k) -> 
 	    (match hnf env e with
-	       | S.Tuple _ as e' -> A.proj e' k
+	       | S.Tuple _ as e' -> T.proj e' k
 	       | e' -> S.Proj (e', k))
 	| S.Less (e1, e2) -> S.Less (hnf env e1, hnf env e2)
 	| S.And lst -> S.And (List.map (hnf env) lst)
@@ -145,9 +146,9 @@ struct
 	    S.Forall (x', i, hnf (Env.extend x' (S.Var x') env) e')
 	| S.App (e1, e2)  ->
 	    let e2' = hnf env e2 in
-	      (match hnf env e1 with
+	     (match hnf env e1 with
 		 | S.Lambda (x, ty, e) -> hnf (Env.extend x e2' env) e
-		 | e1' -> S.App (e1', e2'))
+		 | e1' -> S.App (e1', e2')) 
 	| S.Let (x, e1, e2) -> 
 	    let e1' = hnf env e1 in
 	      hnf (Env.extend x e1' env) e2
@@ -166,62 +167,18 @@ struct
 
   let rec refine k prec env e =
     let refn = refine k prec env in
-      if A.lower prec env e = S.True then S.True
-      else if A.upper prec env e = S.False then S.False
+      if A.lower prec env e = T.True then T.True
+      else if A.upper prec env e = T.False then T.False
       else
 	match e with
-	  | S.Var x -> refine k prec env (Env.get x env)
-	  | S.RealVar (x, _) -> S.Var x
-	  | S.Dyadic _ -> e
-	  | S.Interval _ -> e
-	  | S.Cut (x, i, p1, p2) -> begin
+| T.True -> T.True
+	  | T.False -> T.False
+	  | T.Less (e1, e2) -> T.Less (refinea k prec env  e1, refinea k prec env e2)
+	  | T.And lst -> A.fold_and refn lst
+	  | T.Or lst -> A.fold_or refn lst
+	  | T.Exists (x, i, p) ->
 	      let prec = make_prec prec i in
-		(* To refine a cut [Cut(x,i,p1,p2)] we try to make the
-		   interval [i] smaller and refine [p1] and [p2]. *)
-	      let a = I.lower i in
-	      let b = I.upper i in
-		(* Bisection *)
-	      let m1, m2 = I.thirds prec k i in
-	      let a' = (if A.lower prec (Env.extend x (S.Dyadic m1) env) p1 = S.True then m1 else a) in
-	      let b' = (if A.lower prec (Env.extend x (S.Dyadic m2) env) p2 = S.True then m2 else b) in
-	    	
-	      let j = I.make a' b' in
-	      	(* Newton's method *)
-	      let (r1, r2) = N.estimate k prec env x j p1 in
-	      let (s1, s2) = N.estimate k prec env x j p2 in
-      	      let a'' = D.max a' (D.max (R.supremum r2) (R.supremum s1)) in
-	      let b'' = D.min b' (D.min (R.infimum  s2) (R.infimum r1)) in
-	      match D.cmp a'' b'' with
-		  | `less ->
-		      (* The new interval *)
-		    let l = I.make a'' b'' in	      	    
-		    let env' = Env.extend x (S.RealVar (x, l)) env in
-		    let q1 = refine k prec env' p1 in
-		    let q2 = refine k prec env' p2 in
-(*		    print_endline ("Cut: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (I.to_string j) ^ (I.to_string l) ^ (S.string_of_expr q1) ^ (S.string_of_expr q2));*)
-		      S.Cut (x, l, q1, q2)
-		  | `equal ->
-		      (* We found an exact value *)
-		    S.Dyadic a'
-		  | `greater ->
-		      (* We have a backwards cut. Do nothing. Someone should think
-			 whether this is ok. It would be nice if cuts could be
-			 overlapping, but I have not thought whether this would break
-			 anything else.
-		      *)
-		    e
-	    end
-	  | S.Binary (op, e1, e2) -> S.Binary (op, refn e1, refn e2)
-	  | S.Unary (op, e) -> S.Unary (op, refn e)
-	  | S.Power (e, k) -> S.Power (refn e, k)
-	  | S.True -> S.True
-	  | S.False -> S.False
-	  | S.Less (e1, e2) -> S.Less (refn e1, refn e2)
-	  | S.And lst -> A.fold_and refn lst
-	  | S.Or lst -> A.fold_or refn lst
-	  | S.Exists (x, i, p) ->
-	      let prec = make_prec prec i in
-	      let q = refine k prec (Env.extend x (S.RealVar (x, i)) env) p in
+	      let q = refine k prec (Env.extend x (T.RealVar (x, i)) env) p in
 	    (*  let (a1,b1) = N.estimate k prec env x i q in
               if R.is_inhabited b1 then S.True
               else
@@ -233,7 +190,7 @@ struct
 	              A.fold_or (fun i -> make_exists x i q) [i1; i2])*)
 	      let i1, i2 = I.split prec 1 i in
 		(* Newton's method *)
-	      let (a1, b1) = N.estimate k prec env x i1 q in
+	     (* let (a1, b1) = N.estimate k prec env x i1 q in
 
 (*	      print_endline ("Exists: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (R.to_string a1) ^ (R.to_string b1));*)
 	      if R.is_inhabited b1 then
@@ -259,12 +216,12 @@ struct
 			    (R.complement a2)))
 		    in
 		      A.fold_or (fun i -> make_exists x i q) (lst1 @ lst2)
-		
-	      (*A.fold_or (fun i -> make_exists x i q) [i1; i2]*)
+		*)
+	      A.fold_or (fun i -> make_exists x i q) [i1; i2]
 
-	  | S.Forall (x, i, p) ->
+	  | T.Forall (x, i, p) ->
 	      let prec = make_prec prec i in
-	      let q = refine k prec (Env.extend x (S.RealVar (x, i)) env) p in
+	      let q = refine k prec (Env.extend x (T.RealVar (x, i)) env) p in
 (*      let (a1, b1) = N.estimate k prec env x i q in
 	      if R.is_inhabited a1 then
 		(* We could take [a1] as witness for quantifier being false. *)
@@ -278,18 +235,19 @@ struct
               	    A.fold_and (fun i -> make_forall x i q) [i1; i2])*)
 	      
 	       let i1, i2 = I.split prec 1 i in
+
 		(* Newton's method *)
-              let (a1, b1) = N.estimate k prec env x i1 q in
+              (*let (a1, b1) = N.estimate k prec env x i1 q in
 (*	      print_endline ("Forall: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (R.to_string a1) ^ (R.to_string b1));*)
 	      if R.is_inhabited a1 then
 		(* We could take [a1] as witness for quantifier being false. *)
-		S.False
+		T.False
 	      else
 		let (a2, b2) = N.estimate k prec env x i2 q in
 (*		print_endline ("Forall: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (R.to_string a2) ^ (R.to_string b2));*)
 		  if R.is_inhabited a2 then
 		    (* We could take [a2] as witness for quantifier being false. *)
-		    S.False
+		    T.False
 		  else
 		    let lst1 = R.to_closed_intervals
 		      (R.closure
@@ -303,25 +261,64 @@ struct
 			    (R.of_interval i2)
 			    (R.complement b2)))
 		    in
-		      A.fold_and (fun i -> make_forall x i q) (lst1 @lst2)
+		      A.fold_and (fun i -> make_forall x i q) (lst1 @lst2)*)
 
-              (*A.fold_and (fun i -> make_forall x i q) [i1; i2]*)
-	  | S.Let (x, e1, e2) ->
-	      refine k prec (Env.extend x (refn e1) env) e2
-	  | S.Tuple _ -> e
-	  | S.Proj (e, k) ->
-	      (match refn e with
-		 | S.Tuple lst ->
-		     (try
-			refn (List.nth lst k)
-		      with Failure _ -> error "Tuple too short")
-		 | e -> S.Proj (e, k))
-	  | S.Lambda _ -> e
-	  | S.App (e1, e2) ->
-	      (match refn e1 with
-		 | S.Lambda (x, _, e) -> refine k prec (Env.extend x (refn e2) env) e
-		 | e -> S.App (e, e2))
+              A.fold_and (fun i -> make_forall x i q) [i1; i2]	  
+	  
+	and
+  refinea k prec env e =
+    let refn = refinea k prec env in
+	match e with
+	  | T.Binary (op, e1, e2) -> T.Binary (op, refn e1, refn e2)
+	  | T.Unary (op, e) -> T.Unary (op, refn e)
+	  | T.Power (e, k) -> T.Power (refn e, k)
+	  | T.Var x -> refinea k prec env (Env.get x env)
+	  | T.RealVar (x, _) -> T.Var x
+	  | T.Dyadic _ -> e
+	  | T.Interval _ -> e
+	  | T.Cut (x, i, p1, p2) -> begin
+	      let prec = make_prec prec i in
+		(* To refine a cut [Cut(x,i,p1,p2)] we try to make the
+		   interval [i] smaller and refine [p1] and [p2]. *)
+	      let a = I.lower i in
+	      let b = I.upper i in
+		(* Bisection *)
+	      let m1, m2 = I.thirds prec k i in
+	      let a' = (if A.lower prec (Env.extend x (T.Dyadic m1) env) p1 = T.True then m1 else a) in
+	      let b' = (if A.lower prec (Env.extend x (T.Dyadic m2) env) p2 = T.True then m2 else b) in
 
+
+	      let j = I.make a' b' in 
+let env' = Env.extend x (T.RealVar (x, j)) env in	    	 
+  let q1 = refine k prec env' p1 in
+		    let q2 = refine k prec env' p2 in
+T.Cut (x, j, q1, q2)
+	      (*	(* Newton's method *)
+	      let (r1, r2) = N.estimate k prec env x j p1 in
+	      let (s1, s2) = N.estimate k prec env x j p2 in
+      	      let a'' = D.max a' (D.max (R.supremum r2) (R.supremum s1)) in
+	      let b'' = D.min b' (D.min (R.infimum  s2) (R.infimum r1)) in
+	      match D.cmp a'' b'' with
+		  | `less ->
+		      (* The new interval *)
+		    let l = I.make a'' b'' in	      	    
+		    let env' = Env.extend x (S.RealVar (x, l)) env in
+		    let q1 = refine k prec env' p1 in
+		    let q2 = refine k prec env' p2 in
+(*		    print_endline ("Cut: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (I.to_string j) ^ (I.to_string l) ^ (S.string_of_expr q1) ^ (S.string_of_expr q2));*)
+		      S.Cut (x, l, q1, q2)
+		  | `equal ->
+		      (* We found an exact value *)
+		    S.Dyadic a'
+		  | `greater ->
+		      (* We have a backwards cut. Do nothing. Someone should think
+			 whether this is ok. It would be nice if cuts could be
+			 overlapping, but I have not thought whether this would break
+			 anything else.
+		      *)
+		    e*)
+	    end
+	  
   (** [eval prec env e] evaluates expression [e] in environment [env] by
       repeatedly calling [refine]. It increases precision at each step,
       although we should do something more intelligent about that (not
@@ -329,32 +326,28 @@ struct
       [trace] determines whether debugging information should be printed
       out. *)
   let eval trace env e =
-    let rec loop k p e =
+  let e = hnf env e in 
+    let rec loop k p e' =
       if trace then
 	begin
 	  print_endline ("--------------------------------------------------\n" ^
 			   "Iteration: " ^ string_of_int k ^ "\n" ^
-			   S.string_of_expr e ^ "\n" ^
+			   T.string_of_expr e' ^ "\n" ^
 			   "Press Enter to continue " 
 			) ;
 	  ignore (read_line ())	  
 	end ;
-      match e with
-	| S.Var _ | S.RealVar _
-	| S.Less _ | S.And _ | S.Or _ | S.Exists _ | S.Forall _
-	| S.Let _ | S.Proj _ | S.App _ ->
-	    loop (k+1) (p+1) (refine k p env e)
-	| S.Binary _ | S.Unary _ | S.Power _ | S.Cut _ ->
-	    (match A.lower p env e with
-	       | S.Interval i ->
-		   let w = (I.width 10 D.up i) in
-		     if D.lt w !target_precision then
-		       (e, S.Interval i)
-		     else
-		       loop (k+1) (make_prec (p+3) (I.make D.zero !target_precision)) (refine k p env e)
-	       | _ -> assert false)
-	| S.Dyadic _ | S.Interval _ | S.True | S.False | S.Lambda _ -> (e, e)
-	| S.Tuple lst -> 
+      match e' with
+	| T.Sigma T.True | T.Sigma T.False -> (e,e')
+	| T.Sigma s -> loop (k+1) (p+1) (T.Sigma (refine k p [] s))
+	| T.Real r ->
+	    let i = A.lowera p [] r in	       
+	    let w = (I.width 10 D.up i) in
+	      if D.lt w !target_precision then
+		(e, T.Real (T.Interval i))
+	      else
+		loop (k+1) (make_prec (p+3) (I.make D.zero !target_precision)) (T.Real (refinea k p [] r))	
+	| T.Tuple lst -> 
 	    let lst1, lst2 =
 	      List.fold_left
 		(fun (lst1, lst2) e ->
@@ -363,8 +356,9 @@ struct
 		([], [])
 		lst
 	    in
-	      (S.Tuple lst1, S.Tuple lst2)
-    in
-      loop 1 32 (hnf env e)
+	      (S.Tuple lst1, T.Tuple lst2)
+	| T.Uncompiled _ -> (e, e')
+    in            
+      loop 1 32 (T.convert e)
 end;;
 
