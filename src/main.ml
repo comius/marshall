@@ -101,8 +101,8 @@ let help_text = "Toplevel commands:
 	print_endline ("Target precision set to " ^ D.to_string q) ;
 	(ctx, env)
     | E.S.Hnf e ->
-	let v = E.hnf ~free:true env e in
-	  print_endline (E.S.string_of_expr v) ;
+	let v = E.T.compile env e in
+	  print_endline (E.T.string_of_expr v) ;	
 	  (ctx, env)
     | E.S.Help -> print_endline help_text ; (ctx, env)
     | E.S.Quit -> raise End_of_file

@@ -65,7 +65,7 @@ struct
      the user happy). A $\lambda$-abstraction is not evaluated.
   *)
 
-    let rec free_in y e = match e with
+    (*let rec free_in y e = match e with
 	| S.Var x -> x = y
 	| S.Dyadic _ | S.True | S.False -> false
 	| S.Cut (x, i, p1, p2) -> x<>y && (free_in y p1 || free_in y p2)
@@ -152,7 +152,7 @@ struct
 	| S.Let (x, e1, e2) -> 
 	    let e1' = hnf env e1 in
 	      hnf (Env.extend x e1' env) e2
-
+*)
   (* The function [refine k prec env e] performs one step of evaluation
      of expression [e] in environment [env], using precision [prec] to
      compute arithmetical expressions. This is used by [eval] below to
@@ -323,7 +323,7 @@ struct
       [trace] determines whether debugging information should be printed
       out. *)
   let eval trace env e =
-  let e = hnf env e in 
+  let e = T.compile env e in 
     let rec loop k p e' =
       if trace then
 	begin
@@ -335,13 +335,13 @@ struct
 	  ignore (read_line ())	  
 	end ;
       match e' with
-	| T.Sigma T.True | T.Sigma T.False -> (e,e')
+	| T.Sigma T.True | T.Sigma T.False -> (e',e')
 	| T.Sigma s -> loop (k+1) (p+1) (T.Sigma (refine k p [] s))
 	| T.Real r ->
 	    let i = A.lowera p [] r in	       
 	    let w = (I.width 10 D.up i) in
 	      if D.lt w !target_precision then
-		(e, T.Real (T.Interval i))
+		(e', T.Real (T.Interval i))
 	      else
 		loop (k+1) (make_prec (p+3) (I.make D.zero !target_precision)) (T.Real (refinea k p [] r))	
 	| T.Tuple lst -> 
@@ -353,9 +353,9 @@ struct
 		([], [])
 		lst
 	    in
-	      (S.Tuple lst1, T.Tuple lst2)
-	| T.Uncompiled _ -> (e, e')
+	      (T.Tuple lst1, T.Tuple lst2)
+	| T.Uncompiled _ -> (e', e')
     in            
-      loop 1 32 (T.convert e)
+      loop 1 32 e
 end;;
 

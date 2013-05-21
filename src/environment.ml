@@ -8,7 +8,7 @@ struct
   module T = Types.Make(D)
   module S = Syntax.Make(D)
     
-  type environment = (S.name * T.arithmetic) list
+  type environment = (S.name * T.expr) list
       
   (* Get [x] in environment [env]. *)
   let get x env =
@@ -21,7 +21,7 @@ struct
   let extend x e env = (x,e) :: env
  
   let string_of_env env =
-    String.concat "\n" (List.map (fun (x,v) -> S.string_of_name x ^ "=" ^ S.string_of_expr v) env)
+    String.concat "\n" (List.map (fun (x,v) -> S.string_of_name x ^ "=" ^ T.string_of_expr v) env)
 end
 
 
