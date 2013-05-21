@@ -1,7 +1,7 @@
 module Make = functor (D : Dyadic.DYADIC) ->
 struct
   module S = Syntax.Make(D)
-  module I = Interval.Make(D)
+  module I = Interval.Make(D)  
   
   type expr =
     | Real of arithmetic
@@ -48,14 +48,14 @@ struct
 
    let proj e k =
     match e with
-      | S.Tuple lst ->
+      | Tuple lst ->
          (try
             List.nth lst k
           with Failure _ -> error "Tuple too short")
       | _ -> error "Tuple expected"
 
   let rec arithmetic e = match e with
-	| S.Var x -> Var x	
+	| S.Var x -> RealVar (x,I.bottom)	
 	| S.Dyadic d -> Dyadic d	
 	| S.Cut (x, i, p1, p2) ->	    
 	      Cut (x, i, sigma p1, sigma p2)
@@ -78,6 +78,53 @@ struct
 	| S.Tuple lst -> Tuple (List.map convert lst)
 	| S.True _ | S.False _ | S.Less _ | S.And _ | S.Or _ | S.Exists _ | S.Forall _ as e -> Sigma(sigma e)
         | S.Var _ | S.Dyadic _ | S.Cut _ | S.Binary _ | S.Unary _ | S.Power _ as e -> Real(arithmetic e)	
+
+  let rec compile env e = match e with    
+    | S.Proj (e, k) -> 
+	    (match compile env e with
+	       | Tuple _ as e' -> proj e' k
+	       | _ -> Uncompiled e)
+    | S.Lambda _ -> Uncompiled e
+    | S.Let (x, e1, e2) -> 
+	    let e1' = compile env e1 in
+	      compile ((x,e1')::env) e2
+    | S.App (e1, e2)  ->
+	    let e2' = compile env e2 in
+	      (match compile env e1 with
+		| (Uncompiled (S.Lambda (x, ty, e))) -> compile ((x,e2')::env) e
+		| e1' -> Uncompiled (S.App (e1, e2)))
+    | S.Tuple lst -> Tuple (List.map (compile env) lst)
+
+    | S.True _ | S.False _ | S.Less _ | S.And _ | S.Or _ | S.Exists _ | S.Forall _ as e -> Sigma(compile_sigma env e)
+    | S.Dyadic _ | S.Cut _ | S.Binary _ | S.Unary _ | S.Power _ as e -> Real(compile_real env e)	
+    | S.Var x -> (try
+	       List.assoc x env
+	     with Not_found ->
+	       error ("Unknown variable " ^ S.string_of_name x))
+  and
+    compile_real env e = match e with
+	| S.Dyadic d -> Dyadic d	
+	| S.Cut (x, i, p1, p2) ->	    
+	      Cut (x, i, compile_sigma ((x,Real (Var x))::env) p1, compile_sigma ((x,Real (Var x))::env) p2)
+	| S.Binary (op, e1, e2) -> Binary (op, compile_real env e1, compile_real env e2)
+	| S.Unary (op, e) -> Unary (op, compile_real env e)
+	| S.Power (e, k) -> Power (compile_real env e, k)
+	| _ -> (match compile env e with
+	    | Real e -> e
+	    | _ -> error ("typecheck" ^ S.string_of_expr e))
+  and
+    compile_sigma env e = match e with
+	| S.True -> True
+	| S.False -> False
+	| S.Less (e1, e2) -> Less (compile_real env e1, compile_real env e2)
+	| S.And lst -> And (List.map (compile_sigma env) lst)
+	| S.Or lst -> Or (List.map (compile_sigma env) lst)
+	| S.Exists (x, i, e) -> Exists (x, i, compile_sigma ((x,Real (Var x))::env) e)
+	| S.Forall (x, i, e) -> Forall (x, i, compile_sigma ((x,Real (Var x))::env) e)	  
+	| _ -> (match compile env e with
+	    | Sigma s -> s
+	    | _ -> error ("typecheck" ^ S.string_of_expr e))
+
 
  (** Convert a string to expression *)
   let rec string_of_expr e =
@@ -110,7 +157,7 @@ struct
 				      I.to_string t ^ " , " ^ to_str 9 (Sigma p))	  
 	  )
 	  | Tuple lst ->         (100, "(" ^ (String.concat ", " (List.map (to_str 10) lst)) ^ ")")
-	  | Uncompiled e -> (10, S.string_of_expr e)
+	  | Uncompiled e -> (10, "["^(S.string_of_expr e)^"]")
       in
 	if m > n then str else "(" ^ str ^ ")"
     in
