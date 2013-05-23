@@ -53,32 +53,7 @@ struct
             List.nth lst k
           with Failure _ -> error "Tuple too short")
       | _ -> error "Tuple expected"
-
-  let rec arithmetic e = match e with
-	| S.Var x -> RealVar (x,I.bottom)	
-	| S.Dyadic d -> Dyadic d	
-	| S.Cut (x, i, p1, p2) ->	    
-	      Cut (x, i, sigma p1, sigma p2)
-	| S.Binary (op, e1, e2) -> Binary (op, arithmetic e1, arithmetic e2)
-	| S.Unary (op, e) -> Unary (op, arithmetic e)
-	| S.Power (e, k) -> Power (arithmetic e, k)
-	| _ -> error ("typecheck" ^ S.string_of_expr e)
-  and
-    sigma e = match e with
-	| S.True -> True
-	| S.False -> False
-	| S.Less (e1, e2) -> Less (arithmetic e1, arithmetic e2)
-	| S.And lst -> And (List.map sigma lst)
-	| S.Or lst -> Or (List.map sigma lst)
-	| S.Exists (x, i, e) -> Exists (x, i, sigma e)
-	| S.Forall (x, i, e) -> Forall (x, i, sigma e)	  
-	| _ -> error ("typecheck " ^ S.string_of_expr e)
-  and convert e = match e with
-	| S.Proj _ | S.Lambda _ | S.App _ | S.Let _ -> Uncompiled e
-	| S.Tuple lst -> Tuple (List.map convert lst)
-	| S.True _ | S.False _ | S.Less _ | S.And _ | S.Or _ | S.Exists _ | S.Forall _ as e -> Sigma(sigma e)
-        | S.Var _ | S.Dyadic _ | S.Cut _ | S.Binary _ | S.Unary _ | S.Power _ as e -> Real(arithmetic e)	
-
+	
   let rec compile env e = match e with    
     | S.Proj (e, k) -> 
 	    (match compile env e with
@@ -123,8 +98,7 @@ struct
 	| S.Forall (x, i, e) -> Forall (x, i, compile_sigma ((x,Real (Var x))::env) e)	  
 	| _ -> (match compile env e with
 	    | Sigma s -> s
-	    | _ -> error ("typecheck" ^ S.string_of_expr e))
-
+	    | _ -> error ("typecheck" ^ S.string_of_expr e))           
 
  (** Convert a string to expression *)
   let rec string_of_expr e =

@@ -3,7 +3,6 @@ struct
 
   module I = Interval.Make(D)
   module Env = Environment.Make(D)
-  module S = Syntax.Make(D)
   module N = Newton.Make(D)
   module R = Region.Make(D)
   module A = Approximate.Make(D)
@@ -55,104 +54,6 @@ struct
 
   (* \subsection{Evaluation} *)
 
-  (* The general strategy for evaluation is to successively
-     \emph{refine} a closed expressoin until it reaches a satisfactory
-     form. An expression of type [Ty_Real] is `satisfactory' if its
-     lower approximant is narrow enough (see the [\$precision]
-     toplevel command). An proposition is satisfactory if it is [True]
-     or [False]. Tuples are satisfactory, i.e., they are evaluated
-     lazily (but the top-level [eval] evaluates top-level tuples to make
-     the user happy). A $\lambda$-abstraction is not evaluated.
-  *)
-
-    (*let rec free_in y e = match e with
-	| S.Var x -> x = y
-	| S.Dyadic _ | S.True | S.False -> false
-	| S.Cut (x, i, p1, p2) -> x<>y && (free_in y p1 || free_in y p2)
-	| S.Binary (op, e1, e2) -> free_in y e1 || free_in y e2
-	| S.Unary (op, e) -> free_in y e 
-	| S.Power (e, k) -> free_in y e
-	| S.Proj (e, k) ->
-	    (match  e with
-	       | S.Tuple _ as e' -> free_in y (T.proj e' k)
-	       | e' -> free_in y e)
-	| S.Less (e1, e2) -> free_in y e1 || free_in y e2
-	| S.And lst -> List.fold_left (fun p e -> p || free_in y e) false lst
-	| S.Or lst -> List.fold_left (fun p e -> p || free_in y e) false lst
-	| S.Tuple lst -> List.fold_left (fun p e -> p || free_in y e) false lst
-	| S.Lambda (x, ty, e) -> x<>y && (free_in y e)
-	| S.Exists (x, i, e) -> x<>y && (free_in y e)
-	| S.Forall (x, i, e) -> x<>y && (free_in y e)
-	| S.App (e1, e2)  -> free_in y e1 || free_in y e2
-	| S.Let (x, e1, e2) -> free_in y e1 || (x<>y && free_in y e2)
-
-    let rec free_in_env x env e =
-      match env with
-	| [] -> false
-	| (y,e')::l -> (if free_in y e then free_in x e' else false) || free_in_env x l e
-
-  (* The first step of evaluation is to evaluate to head-normal form
-     because we want to get rid of local definitions and redexes. This
-     causes a huge inefficiency because it may unnecessarily multiply
-     repeat subexpressions, but computation of derivatives cannot handle
-     general applications and local definitions. *)
-
-  let rec hnf ?(free=false) env e =        
-    let alpha1 x env e =
-      if free_in_env x env e then 
-	let x' = S.fresh_name (S.string_of_name x) in
-	  x', hnf ~free:true (Env.extend x (S.Var x') []) e
-      else
-	 x, e
-    in      
-    let alpha2 x env e1 e2 =
-      if free_in_env x env e1 || free_in_env x env e2 then 
-	let x' = S.fresh_name (S.string_of_name x) in
-	  x', hnf ~free:true (Env.extend x (S.Var x') []) e1, hnf ~free:true (Env.extend x (S.Var x') []) e2
-      else
-	 x, e1, e2
-    in      
-    let hnf = hnf ~free in
-      match e with
-	| S.Var x ->
-	    (try
-	       List.assoc x env
-	     with Not_found ->
-	       if free then S.Var x else error ("Unknown variable " ^ S.string_of_name x))
-	| (S.Dyadic _ | S.True | S.False) as e -> e
-	| S.Cut (x, i, p1, p2) ->
-	    let x', p1', p2' = alpha2 x env p1 p2 in
-	    let env' = Env.extend x' (S.Var x') env in		  
-	      S.Cut (x', i, hnf env' p1', hnf env' p2')
-	| S.Binary (op, e1, e2) -> S.Binary (op, hnf env e1, hnf env e2)
-	| S.Unary (op, e) -> S.Unary (op, hnf env e)
-	| S.Power (e, k) -> S.Power (hnf env e, k)
-	| S.Proj (e, k) -> 
-	    (match hnf env e with
-	       | S.Tuple _ as e' -> T.proj e' k
-	       | e' -> S.Proj (e', k))
-	| S.Less (e1, e2) -> S.Less (hnf env e1, hnf env e2)
-	| S.And lst -> S.And (List.map (hnf env) lst)
-	| S.Or lst -> S.Or (List.map (hnf env) lst)
-	| S.Tuple lst -> S.Tuple (List.map (hnf env) lst)
-	| S.Lambda (x, ty, e) -> 
-	  let x',e' = alpha1 x env e in 
-	    S.Lambda (x', ty, hnf (Env.extend x' (S.Var x') env) e')
-	| S.Exists (x, i, e) ->
-	  let x',e' = alpha1 x env e in 
-	    S.Exists (x', i, hnf (Env.extend x' (S.Var x') env) e')
-	| S.Forall (x, i, e) -> 
-	  let x',e' = alpha1 x env e in 
-	    S.Forall (x', i, hnf (Env.extend x' (S.Var x') env) e')
-	| S.App (e1, e2)  ->
-	    let e2' = hnf env e2 in
-	     (match hnf env e1 with
-		 | S.Lambda (x, ty, e) -> hnf (Env.extend x e2' env) e
-		 | e1' -> S.App (e1', e2')) 
-	| S.Let (x, e1, e2) -> 
-	    let e1' = hnf env e1 in
-	      hnf (Env.extend x e1' env) e2
-*)
   (* The function [refine k prec env e] performs one step of evaluation
      of expression [e] in environment [env], using precision [prec] to
      compute arithmetical expressions. This is used by [eval] below to
@@ -322,8 +223,7 @@ struct
       all subexpressions of [e] need the same precision). The argument
       [trace] determines whether debugging information should be printed
       out. *)
-  let eval trace env e =
-  let e = T.compile env e in 
+  let eval trace e =  
     let rec loop k p e' =
       if trace then
 	begin

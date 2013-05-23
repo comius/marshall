@@ -3,6 +3,8 @@
 module Make = functor (D : Dyadic.DYADIC) ->
 struct
   module TC = Typecheck.Make(D)
+  module S = Syntax.Make(D)
+  module T = Types.Make(D)
   module E = Eval.Make(D)
   module P = Parser.Make(D)
   module L = Lexer.Make(D)
@@ -81,32 +83,34 @@ let help_text = "Toplevel commands:
       environment [env] and typing context [ctx]. It prints the result on
       standard output and return the new environment. *)
   let rec exec_cmd interactive (ctx,env) = function
-    | E.S.Expr (e, trace) ->
+    | S.Expr (e, trace) ->
 	(try
 	   let ty = TC.type_of ctx e in
-	   let v1, v2 = E.eval trace env e in
-	     print_endline ("- : " ^ E.S.string_of_type ty ^ " = " ^ E.T.string_of_expr v2) ;
+	   let c = T.compile env e in
+	   let v1, v2 = E.eval trace c in
+	     print_endline ("- : " ^ S.string_of_type ty ^ " = " ^ T.string_of_expr v2) ;
 	     (ctx, env)
 	 with error -> (Message.report error; (ctx, env)))
-    | E.S.Definition (x, e) ->
+    | S.Definition (x, e) ->
 	(try
 	   let ty = TC.type_of ctx e in
-	   let v1, v2 = E.eval false env e in
+	   let c = T.compile env e in
+	   let v1, v2 = E.eval false c in
 	     print_endline
-	       (E.S.string_of_name x ^ " : " ^ E.S.string_of_type ty ^ " = " ^ E.T.string_of_expr v2) ;
+	       (S.string_of_name x ^ " : " ^ S.string_of_type ty ^ " = " ^ T.string_of_expr v2) ;
 	     ((x,ty)::ctx, E.Env.extend x v1 env)
 	 with error -> (Message.report error; (ctx, env)))
-    | E.S.Precision q ->
+    | S.Precision q ->
 	E.target_precision := q ;
 	print_endline ("Target precision set to " ^ D.to_string q) ;
 	(ctx, env)
-    | E.S.Hnf e ->
-	let v = E.T.compile env e in
-	  print_endline (E.T.string_of_expr v) ;	
+    | S.Hnf e ->
+	let c = T.compile env e in
+	  print_endline (T.string_of_expr c) ;
 	  (ctx, env)
-    | E.S.Help -> print_endline help_text ; (ctx, env)
-    | E.S.Quit -> raise End_of_file
-    | E.S.Use fn -> use_file (ctx, env) (fn, interactive)
+    | S.Help -> print_endline help_text ; (ctx, env)
+    | S.Quit -> raise End_of_file
+    | S.Use fn -> use_file (ctx, env) (fn, interactive)
 	
   (** [exec_cmds interactive (ctx,env) cmds] executes the list of commands [cmds] in
       context [ctx] and environment [env], and returns the new
