@@ -6,6 +6,7 @@ struct
   module S = Syntax.Make(D)
   module T = Types.Make(D)
   module E = Eval.Make(D)
+  module C = Compiler.Make(D)
   module P = Parser.Make(D)
   module L = Lexer.Make(D)
 
@@ -86,7 +87,7 @@ let help_text = "Toplevel commands:
     | S.Expr (e, trace) ->
 	(try
 	   let ty = TC.type_of ctx e in
-	   let c = T.compile env e in
+	   let c = T.convert env e in
 	   let v1, v2 = E.eval trace c in
 	     print_endline ("- : " ^ S.string_of_type ty ^ " = " ^ T.string_of_expr v2) ;
 	     (ctx, env)
@@ -94,7 +95,7 @@ let help_text = "Toplevel commands:
     | S.Definition (x, e) ->
 	(try
 	   let ty = TC.type_of ctx e in
-	   let c = T.compile env e in
+	   let c = T.convert env e in
 	   let v1, v2 = E.eval false c in
 	     print_endline
 	       (S.string_of_name x ^ " : " ^ S.string_of_type ty ^ " = " ^ T.string_of_expr v2) ;
@@ -105,7 +106,7 @@ let help_text = "Toplevel commands:
 	print_endline ("Target precision set to " ^ D.to_string q) ;
 	(ctx, env)
     | S.Hnf e ->
-	let c = T.compile env e in
+	let c = T.convert env e in
 	  print_endline (T.string_of_expr c) ;
 	  (ctx, env)
     | S.Help -> print_endline help_text ; (ctx, env)

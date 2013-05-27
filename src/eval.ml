@@ -254,7 +254,7 @@ struct
 		lst
 	    in
 	      (T.Tuple lst1, T.Tuple lst2)
-	| T.Uncompiled _ -> (e', e')
+	| T.Unconverted _ -> (e', e')
     in            
       loop 1 32 e
 end;;
