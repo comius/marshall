@@ -13,7 +13,7 @@ struct
     | BsRVar of S.name
     | Binary of binaryop * realexpr * realexpr 
     | Unary of unaryop * realexpr     
-    | ConstReal of D.t
+    | ConstReal of I.t
   and sigmaexpr = 
     | BsBVar of S.name 
     | And of sigmaexpr list
@@ -74,7 +74,7 @@ struct
   and
     compile_real env e = match e with
 	| S.Dyadic d -> 
-	      ConstReal d, []
+	      ConstReal (I.of_dyadic d), []
 	| S.Cut (x, i, p1, p2) ->	    	    	    
 	    let s1,bs1 = compile_sigma ((x,realvar x)::env) p1 in
 	    let s2,bs2 = compile_sigma ((x,realvar x)::env) p2 in
@@ -149,7 +149,7 @@ struct
     | BsRVar x -> S.string_of_name x 
     | Binary (_,r1,r2) -> (str_of_real r1) ^ "°" ^ (str_of_real r2)
     | Unary (_,r1) -> str_of_real r1    
-    | ConstReal c -> D.to_string c
+    | ConstReal c -> I.to_string c
   and str_of_sigma s = match s with
     | BsBVar x -> S.string_of_name x 
     | And lst -> String.concat "/\\" (List.map str_of_sigma lst)

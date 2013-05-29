@@ -7,6 +7,7 @@ struct
   module T = Types.Make(D)
   module E = Eval.Make(D)
   module C = Compiler.Make(D)
+  module M = Machine.Make(D)
   module P = Parser.Make(D)
   module L = Lexer.Make(D)
 
@@ -87,27 +88,37 @@ let help_text = "Toplevel commands:
     | S.Expr (e, trace) ->
 	(try
 	   let ty = TC.type_of ctx e in
-	   let c = T.convert env e in
-	   let v1, v2 = E.eval trace c in
-	     print_endline ("- : " ^ S.string_of_type ty ^ " = " ^ T.string_of_expr v2) ;
+	let c = C.compile env e in	   
+	let v1, v2 = M.exec trace c in	
+	print_endline ("- : " ^ S.string_of_type ty ^ " = " ^ M.string_of_expr v2) ;
+	
+	(*let c = T.convert env e in	   
+	   let v1, v2 = E.eval trace c in	
+	     print_endline ("- : " ^ S.string_of_type ty ^ " = " ^ T.string_of_expr v2) ;*)
 	     (ctx, env)
 	 with error -> (Message.report error; (ctx, env)))
     | S.Definition (x, e) ->
 	(try
 	   let ty = TC.type_of ctx e in
-	   let c = T.convert env e in
-	   let v1, v2 = E.eval false c in
+	   let c = C.compile env e in
+	  let v1, v2 = M.exec false c in	     
+	      print_endline (S.string_of_name x ^ " : " ^ S.string_of_type ty ^ " = " ^ M.string_of_expr v2) ;
+	      ((x,ty)::ctx, E.Env.extend x c env)	   
+	   (*let c = T.convert env e in
+	   let v1, v2 = E.eval false c in	     
 	     print_endline
 	       (S.string_of_name x ^ " : " ^ S.string_of_type ty ^ " = " ^ T.string_of_expr v2) ;
-	     ((x,ty)::ctx, E.Env.extend x v1 env)
+	     ((x,ty)::ctx, E.Env.extend x c2 env)*)
 	 with error -> (Message.report error; (ctx, env)))
     | S.Precision q ->
 	E.target_precision := q ;
 	print_endline ("Target precision set to " ^ D.to_string q) ;
 	(ctx, env)
     | S.Hnf e ->
-	let c = T.convert env e in
-	  print_endline (T.string_of_expr c) ;
+	let c = C.compile env e in
+	  print_endline (C.string_of_expr c) ;
+	(*let c = T.convert env e in
+	  print_endline (T.string_of_expr c) ;*)
 	  (ctx, env)
     | S.Help -> print_endline help_text ; (ctx, env)
     | S.Quit -> raise End_of_file
