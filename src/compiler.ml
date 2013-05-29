@@ -3,6 +3,7 @@ struct
   module S = Syntax.Make(D)
   module I = Interval.Make(D)  
   
+
   type expr =    
     | Real of eval_real * refine * basesets
     | Sigma of approx * approx * refine * basesets
@@ -132,6 +133,7 @@ struct
 	    | _ -> error ("typecheck" ^ S.string_of_expr e))
   and
     realvar x = Real ((fun ~prec ~round env bs -> getx x env), idref, [])
+  and flipenv env = match env with | (x,i)::t -> (x,I.flip i)::(flipenv t) | [] -> []
   and
     foldop op sop env lst = match lst with
       | h::tl -> let l1,u1,r1,bs1 = compile_sigma env h in
@@ -166,14 +168,59 @@ struct
 	    foldop (||) false env lst
 	| S.Exists (x, i, e) -> 	    
 	    let l,u,r,bs = compile_sigma ((x,realvar x)::env) e in
-	    ((fun  ~prec env bs -> true), (fun  ~prec env bs-> false), idref, [Quant (x,[i,bs])])
+	    ((fun  ~prec env bs ->
+		match bs with 	
+		| [Quant (_, lst)] -> List.fold_left (fun res (i,bs) -> res || (l ~prec ((x,I.of_dyadic (I.midpoint prec 1 i))::env) bs)) false lst		    
+		| _ -> error("")),
+	    (fun  ~prec env bs ->
+		match bs with 	
+		| [Quant (_, lst)] -> List.fold_left (fun res (i,bs) -> res || (u ~prec ((x,I.flip i)::env) bs)) false lst		    
+		| _ -> error("")),
+	    (fun ~k ~prec env bs -> 
+		match bs with 	
+		| [Quant (x, lst)] ->
+		    
+		    let qlst = List.fold_left  (
+			fun restail (i,bs)->
+			  let prec = make_prec prec i in 
+			  let q = r ~k ~prec ((x,i)::env) bs in
+			    if l ~prec ((x,i)::env) q then [(i,q)] (*shortcut*) else
+			    (if u ~prec (flipenv ((x,i)::env)) q then
+			      let i1, i2 = I.split prec 1 i in
+				(i1,q)::(i2,q)::restail
+			    else restail)) [] lst in
+		    [Quant (x,qlst)]
+		| _ -> error (""))
+	      , [Quant (x,[i,bs])])
 	    (*let est1,r1,bs1 = commonreal real1 in
 	    let s,l,u = compile_sigma ((x,realvar x)::env) e in
 	      ([Quant (x,[(i,s)])], (fun env -> let m = I.of_dyadic (I.midpoint ~prec:1 1 (List.assoc x env)) in l ((x,m)::env)),
 			fun env -> let j = I.flip (List.assoc x env) in u ((x,j)::env))*)
 	| S.Forall (x, i, e) -> (*Forall (x, i, compile_sigma ((x,realvar x)::env) e)	  *)	    
 	    let l,u,r,bs = compile_sigma ((x,realvar x)::env) e in
-	    ((fun  ~prec env bs -> true), (fun  ~prec env bs-> false), idref, [Quant (x,[i,bs])])
+	    ((fun  ~prec env bs ->
+		match bs with 	
+		| [Quant (_, lst)] -> List.fold_left (fun res (i,bs) -> res && (l ~prec ((x,i)::env) bs)) true lst		    
+		| _ -> error("")),
+	    (fun  ~prec env bs ->
+		match bs with 	
+		| [Quant (_, lst)] -> List.fold_left (fun res (i,bs) -> res && (u ~prec ((x,I.of_dyadic (I.midpoint prec 1 i))::env) bs)) true lst
+		| _ -> error("")),
+	        (fun ~k ~prec env bs -> 
+		match bs with 	
+		| [Quant (x, lst)] ->
+		    
+		    let qlst = List.fold_left  (
+			fun restail (i,bs)->
+			  let prec = make_prec prec i in 
+			  let q = r ~k ~prec ((x,i)::env) bs in
+			    if l ~prec ((x,i)::env) q then restail else
+			    (if u ~prec (flipenv ((x,i)::env)) q then
+			      let i1, i2 = I.split prec 1 i in
+				(i1,q)::(i2,q)::restail
+			    else (*shortcut*) [(i,q)])) [] lst in
+		    [Quant (x,qlst)]
+		| _ -> error ("")), [Quant (x,[i,bs])])
 
 (*	    let s,l,u = compile_sigma ((x,realvar x)::env) e in
 	      ([Quant (x,[(i,s)])], (fun env -> let m = I.of_dyadic (I.midpoint ~prec:1 1 (List.assoc x env)) in l ((x,m)::env)),
@@ -186,7 +233,7 @@ struct
   let rec string_of_expr e =
     match e with
 	  | Real (e,_,bs) -> let i = e ~prec:32 ~round:D.down [] bs in	"real " ^ I.to_string_number i ^ ":" ^ str_of_bs bs 
-	  | Sigma (_,_,_,bs) -> "sigma: " ^ str_of_bs bs
+	  | Sigma (l,u,_,bs) -> "sigma (" ^ string_of_bool (l ~prec:32 [] bs) ^ "," ^ string_of_bool (u ~prec:32 [] bs) ^ "):" ^ str_of_bs bs
 	  | Tuple lst -> "(" ^ (String.concat ", " (List.map string_of_expr lst)) ^ ")"
 	  | Uncompiled e -> "["^(S.string_of_expr e)^"]"
    and str_of_bs bs = "(" ^ String.concat ", " (List.map str_of_env bs) ^ ")"
@@ -216,9 +263,14 @@ struct
 		(e', Real (e,r,bs))
 	      else
 		loop (k+1) (make_prec (p+3) (I.make D.zero !target_precision)) (Real (e,r,r ~k ~prec:p [] bs))		
+	| Sigma (l,u,r,bs) ->
+	  if (l ~prec:p [] bs) then (e', Sigma (l,u,r,bs))
+	  else 
+	    (if (u ~prec:p [] bs) then
+	      loop (k+1) (p+1) (Sigma (l,u,r,r ~k ~prec:p [] bs))
+	    else (e', Sigma (l,u,r,bs)))
 	|  _ -> (e', e')
     in            
-      loop 1 32 e
+      loop 1 32 e    
 
-  
 end;;
