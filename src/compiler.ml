@@ -4,12 +4,13 @@ struct
   module I = Interval.Make(D)  
   
   type expr =    
-    | Real of realexpr * basesets (* another realexpr for Lifschitz *)
+    | Real of realexpr * realexpr * basesets (* another realexpr for Lipschitz *)
     | Sigma of sigmaexpr * basesets
     | Tuple of expr list (* [(e1, ..., en)] *)
     | Uncompiled of S.expr  
   and realexpr = 
     | EnvRVar of S.name 
+    | EnvDRVar of S.name 
     | BsRVar of S.name
     | Binary of binaryop * realexpr * realexpr 
     | Unary of unaryop * realexpr     
@@ -18,7 +19,7 @@ struct
     | BsBVar of S.name 
     | And of sigmaexpr list
     | Or of sigmaexpr list
-    | Less of realexpr * realexpr
+    | GtZero of realexpr * realexpr
     | ConstSigma of bool
   and basesets = (S.name * bs) list
   and bs = 
@@ -62,7 +63,7 @@ struct
     | S.Tuple lst -> Tuple (List.map (compile env) lst)
     
     | S.Dyadic _ | S.Cut _ | S.Binary _ | S.Unary _ | S.Power _ as e -> 
-	let r,bs = compile_real env e in  Real (r,bs)
+	let r,l,bs = compile_real env e in  Real (r,l,bs)
     | S.True _ | S.False _ | S.Less _ | S.And _ | S.Or _ | S.Exists _ | S.Forall _ as e -> 
 	let s,bs = compile_sigma env e in Sigma (s,bs)
     | S.Var x -> (try
@@ -72,45 +73,50 @@ struct
   and 
     getx x env = List.assoc x env
   and
+    powk k = fun ~prec ~round i -> I.pow ~prec ~round i k
+  and
     compile_real env e = match e with
 	| S.Dyadic d -> 
-	      ConstReal (I.of_dyadic d), []
+	      ConstReal (I.of_dyadic d), ConstReal (I.of_dyadic D.zero), []
 	| S.Cut (x, i, p1, p2) ->	    	    	    
 	    let s1,bs1 = compile_sigma ((x,realvar x)::env) p1 in
 	    let s2,bs2 = compile_sigma ((x,realvar x)::env) p2 in
 	    let y = S.fresh_name "c" in
-	      BsRVar y, [(y,Cut (x,i,bs1,bs2,s1,s2))]
+	      BsRVar y, ConstReal I.bottom, [(y,Cut (x,i,bs1,bs2,s1,s2))]
 	| S.Binary (op, e1, e2) -> 
-	    let r1,bs1 = compile_real env e1 in
-	    let r2,bs2 = compile_real env e2 in	    
-	    let opf = (match op with
-	      | S.Plus -> I.add 
-	      | S.Minus -> I.sub
-	      | S.Times -> I.mul
-	      | S.Quotient -> I.div) in
-	    Binary (opf, r1, r2), bs1@bs2	    
+	    let r1,l1,bs1 = compile_real env e1 in
+	    let r2,l2,bs2 = compile_real env e2 in	    
+	    let opf,l = (match op with
+	      | S.Plus -> I.add, Binary (I.add,l1,l2)
+	      | S.Minus -> I.sub, Binary (I.sub,l1,l2)
+	      | S.Times -> I.mul, Binary (I.add, Binary (I.mul,l1,r2), Binary (I.mul,r1,l2))
+	      | S.Quotient -> I.div, Binary (I.div, 
+		Binary (I.sub,Binary (I.mul,l1,r2),Binary(I.mul,l2,r1)),
+		Unary(powk 2, r1))) in
+	    Binary (opf, r1, r2),l, bs1@bs2	    
 	| S.Unary (op, e) ->	    
-	    let r1,bs1 = compile_real env e in	    
-	    let opf = (match op with
-	      | S.Opposite -> I.neg 
-	      | S.Inverse -> I.inv) in
-	      Unary (opf, r1), bs1
+	    let r1,l1,bs1 = compile_real env e in	    
+	    let opf,l = (match op with
+	      | S.Opposite -> I.neg, Unary (I.neg, l1)
+	      | S.Inverse -> I.inv, Binary (I.div, l1, Unary (powk 2,r1))) in
+	      Unary (opf, r1), l, bs1
 	| S.Power (e, k) ->	    
-	    let r1,bs1 = compile_real env e in	    
-	      Unary ((fun ~prec ~round i -> I.pow ~prec ~round i k),r1), bs1	      
+	    let r1,l1,bs1 = compile_real env e in Unary (powk k,r1), 
+		Binary (I.mul, ConstReal (I.of_dyadic (D.of_int ~round:D.down k)), 
+				Binary (I.mul, Unary (powk (k-1), r1), l1)),
+		bs1	    	
 	| _ -> (match compile env e with
-	    | Real (r,bs) -> r,bs
+	    | Real (r,l,bs) -> r,l,bs
 	    | _ -> error ("typecheck" ^ S.string_of_expr e))
   and
-    realvar x = Real (EnvRVar x, [])  
+    realvar x = Real (EnvRVar x, EnvDRVar x, [])  
   and
     compile_sigma env e = match e with
 	| S.True -> ConstSigma true, []
 	| S.False -> ConstSigma false, []
 	| S.Less (e1, e2) -> 	    
-	    let r1,bs1 = compile_real env e1 in
-	    let r2,bs2 = compile_real env e2 in
-	    Less (r1,r2), bs1@bs2
+	    let r1,l1,bs1 = compile_real env (S.Binary (S.Minus,e2,e1)) in	    
+	    GtZero (r1,l1), bs1
 	| S.And lst -> 
 	    let r,bs = List.split (List.map (compile_sigma env) lst) in
 	    And r, List.flatten bs
@@ -132,7 +138,7 @@ struct
  (** Convert a string to expression *)
   let rec string_of_expr e =
     match e with
-	  | Real (r,bs) -> "real " ^ str_of_bs bs ^ " in " ^ str_of_real r 
+	  | Real (r,l,bs) -> "real " ^ str_of_bs bs ^ " in (" ^ str_of_real r ^ "," ^ str_of_real r ^ ")"
 	  | Sigma (s,bs) -> "sigma " ^ str_of_bs bs ^ " in " ^ str_of_sigma s 
 	  | Tuple lst -> "(" ^ (String.concat ", " (List.map string_of_expr lst)) ^ ")"
 	  | Uncompiled e -> "["^(S.string_of_expr e)^"]"
@@ -146,6 +152,7 @@ struct
 	    " right " ^ str_of_bs bs2 ^ " in " ^ str_of_sigma s2
   and str_of_real r = match r with
     | EnvRVar x -> S.string_of_name x 
+    | EnvDRVar x -> S.string_of_name x ^ "'"
     | BsRVar x -> S.string_of_name x 
     | Binary (_,r1,r2) -> (str_of_real r1) ^ "°" ^ (str_of_real r2)
     | Unary (_,r1) -> str_of_real r1    
@@ -154,7 +161,7 @@ struct
     | BsBVar x -> S.string_of_name x 
     | And lst -> String.concat "/\\" (List.map str_of_sigma lst)
     | Or lst -> String.concat "\\/" (List.map str_of_sigma lst)
-    | Less (r1,r2) -> (str_of_real r1) ^ "<" ^ (str_of_real r2)
+    | GtZero (r,l) -> "0<(" ^ (str_of_real r) ^ "," ^ (str_of_real l) ^ ")"
     | ConstSigma c -> string_of_bool c
 
 end;;

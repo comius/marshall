@@ -9,6 +9,7 @@ struct
     let rec approx r =
 	match r with 
 	| EnvRVar x -> List.assoc x env
+	| EnvDRVar x -> error "not expecting a derivative"
 	| BsRVar x -> (match (List.assoc x bs) with
 	    | Cut (_,i,_,_,_,_) -> i
 	    | _ -> error "not a cut")
@@ -21,6 +22,7 @@ struct
     let rec approx r =
 	match r with 
 	| EnvRVar x -> I.flip (List.assoc x env)
+	| EnvDRVar x -> error "not expecting a derivative"
 	| BsRVar x -> (match (List.assoc x bs) with
 	    | Cut (_,i,_,_,_,_) -> I.flip i
 	    | _ -> error "not a cut")
@@ -41,10 +43,9 @@ struct
 	| _ -> error "not a sigma")
     | And lst -> List.fold_left (&&) true (List.rev_map (lower ~prec env bs) lst)
     | Or lst -> List.fold_left (||) false (List.rev_map (lower ~prec env bs) lst)
-    | Less (r1,r2) -> 
-	let i1 = lower_real ~prec ~round:D.down env bs r1 in
-        let i2 = lower_real ~prec ~round:D.down env bs r2 in 
-                  D.lt (I.upper i1) (I.lower i2) 
+    | GtZero (r,l) -> 
+	let i = lower_real ~prec ~round:D.down env bs r in        
+                  D.positive (I.lower i) 
     | ConstSigma c -> c
  
   let rec upper ~prec env bs s =    
@@ -59,10 +60,8 @@ struct
 	| _ -> error "not a sigma")
     | And lst -> List.fold_left (&&) true (List.rev_map (upper ~prec env bs) lst)
     | Or  lst -> List.fold_left (||) false (List.rev_map (upper ~prec env bs) lst)
-    | Less (r1,r2) -> 
-	let i1 = upper_real ~prec ~round:D.up env bs r1 in
-	let i2 = upper_real ~prec ~round:D.up env bs r2 in 
-		  D.lt (I.upper i1) (I.lower i2)
+    | GtZero (r,l) -> 
+	let i = upper_real ~prec ~round:D.up env bs r in D.positive (I.lower i)
     | ConstSigma c -> c
 
   let rec refine ~k ~prec env bslist =
@@ -110,7 +109,7 @@ struct
 
   let string_of_expr e =
     match e with
-    | Real (r,bs) -> 
+    | Real (r,l,bs) -> 
 	let i = lower_real ~prec:32 ~round:D.down [] bs r in 
 	  I.to_string_number i
     | Sigma (s,bs) -> string_of_bool (lower ~prec:32 [] bs s) 
@@ -131,13 +130,13 @@ struct
           ignore (read_line ())   
         end ;
       match e' with
-        | Real (r,bs) ->
+        | Real (r,l,bs) ->
             let i = lower_real ~prec:p ~round:D.down [] bs r in
             let w = (I.width 10 D.up i) in          
               if D.lt w !target_precision then
-                (e', Real (r,bs))
+                (e', Real (r,l,bs))
               else
-                loop (k+1) (make_prec (p+3) (I.make D.zero !target_precision)) (Real (r,refine ~k ~prec:p [] bs))
+                loop (k+1) (make_prec (p+3) (I.make D.zero !target_precision)) (Real (r,l,refine ~k ~prec:p [] bs))
         | Sigma (s,bs) ->
           if (lower ~prec:p [] bs s) then (e', Sigma (s,bs))
           else 
