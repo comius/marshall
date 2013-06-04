@@ -141,7 +141,7 @@ struct
       let y2 = I.lower (A.uppera prec (Env.extend x (T.Dyadic x2) env) e) in 
       let lif = A.uppera prec (Env.extend x (T.Interval (I.flip i)) env) (diff x e) in  (* Lifschitz constant as an interval *)                 
       if not (I.proper (I.flip lif)) then R.real_line else
-	  R.union (estimate_endpoint prec x1 y1 (I.lower lif))
+	  R.intersection (estimate_endpoint prec x1 y1 (I.lower lif))
 		 (estimate_endpoint prec x2 y2 (I.upper lif))
 	
 
