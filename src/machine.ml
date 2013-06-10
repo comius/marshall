@@ -64,32 +64,38 @@ struct
 	let i = upper_real ~prec ~round:D.up env bs r in D.positive (I.lower i)
     | ConstSigma c -> c
 
+  exception Break of (I.t * basesets) list
+
   let rec refine ~k ~prec env bslist =
     let refine1 bs =
       match bs with
       | Exists (x,lst,s)->
-	let qlst = List.fold_left  (
-	  fun restail (i,bs)->
-	    let prec = make_prec prec i in 
-	    let q = refine ~k ~prec ((x,i)::env) bs in
-	    if lower ~prec ((x,i)::env) q s then [(i,q)] (*shortcut*) else
-	      (if upper ~prec ((x,i)::env) q s then
-		  let i1, i2 = I.split prec 1 i in
-		    (i1,q)::(i2,q)::restail
-	      else restail)) [] lst in
-         Exists (x,qlst,s)
+	let qlst = try 
+	  List.fold_left  (
+	    fun restail (i,bs)->
+	      let prec = make_prec prec i in 
+	      let q = refine ~k ~prec ((x,i)::env) bs in
+	      if lower ~prec ((x,i)::env) q s then raise (Break [(i,q)]) else
+		(if upper ~prec ((x,i)::env) q s then
+		    let i1, i2 = I.split prec 1 i in
+		      (i1,q)::(i2,q)::restail
+		else restail)) [] lst
+	  with Break(qlst)->qlst in
+	    Exists (x,qlst,s)
       | Forall (x,lst,s) ->   
-	let qlst = List.fold_left  (
-	  fun restail (i,bs)->
-          let prec = make_prec prec i in 
-          let q = refine ~k ~prec ((x,i)::env) bs in
-	    if lower ~prec ((x,i)::env) q s then restail 
-	    else
-	      (if upper ~prec ((x,i)::env) q s then
-		  let i1, i2 = I.split prec 1 i in 
-		    (i1,q)::(i2,q)::restail 
-               else (*shortcut*) [(i,q)])) [] lst in
-                    Forall (x,qlst,s)
+	let qlst = try
+	  List.fold_left  (
+	    fun restail (i,bs)->
+	      let prec = make_prec prec i in 
+	      let q = refine ~k ~prec ((x,i)::env) bs in
+		if lower ~prec ((x,i)::env) q s then restail 
+		else
+		  (if upper ~prec ((x,i)::env) q s then
+		      let i1, i2 = I.split prec 1 i in 
+			(i1,q)::(i2,q)::restail 
+		  else raise (Break [(i,q)]))) [] lst
+	  with Break(qlst)->qlst in
+	    Forall (x,qlst,s)
       | Cut (x,i,bs1,bs2,s1,s2) ->
 	  let prec = make_prec prec i in
 	    (* To refine a cut [Cut(x,i,p1,p2)] we try to make the
