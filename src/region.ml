@@ -59,7 +59,7 @@ module Make =
 	if D.leq a b then
 	  [(closed_of_dyadic a, closed_of_dyadic b)]
 	else
-	  raise (Invalid_argument "Region.of_interval")
+	  raise (Invalid_argument ("Region.of_interval "^I.to_string i))
 
     let lower (p, _) = p
     let upper (_, q) = q
