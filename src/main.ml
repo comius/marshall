@@ -7,7 +7,7 @@ struct
   module T = Types.Make(D)
   module E = Eval.Make(D)
   module C = Compiler.Make(D)
-  module M = Machine.Make(D)
+  module M = Newt_machine.Make(D)
   module P = Parser.Make(D)
   module L = Lexer.Make(D)
 
@@ -111,7 +111,7 @@ let help_text = "Toplevel commands:
 	     ((x,ty)::ctx, E.Env.extend x c2 env)*)
 	 with error -> (Message.report error; (ctx, env)))
     | S.Precision q ->
-	E.target_precision := q ;
+	M.target_precision := q ;
 	print_endline ("Target precision set to " ^ D.to_string q) ;
 	(ctx, env)
     | S.Hnf e ->
@@ -157,7 +157,7 @@ let help_text = "Toplevel commands:
       with End_of_file -> ()
 
   (** Main program *)
-  let main =
+  let main =    
     Sys.catch_break true ;
     (* Parse the arguments. *)
     Arg.parse options anonymous usage ;

@@ -98,7 +98,7 @@ struct
 	    let r1,l1,bs1 = compile_real env e in	    
 	    let opf,l = (match op with
 	      | S.Opposite -> I.neg, Unary (I.neg, l1)
-	      | S.Inverse -> I.inv, Binary (I.div, l1, Unary (powk 2,r1))) in
+	      | S.Inverse -> I.inv, Unary (I.neg, Binary (I.div, l1, Unary (powk 2,r1)))) in
 	      Unary (opf, r1), l, bs1
 	| S.Power (e, k) ->	    
 	    let r1,l1,bs1 = compile_real env e in Unary (powk k,r1), 
@@ -138,7 +138,7 @@ struct
  (** Convert a string to expression *)
   let rec string_of_expr e =
     match e with
-	  | Real (r,l,bs) -> "real " ^ str_of_bs bs ^ " in (" ^ str_of_real r ^ "," ^ str_of_real r ^ ")"
+	  | Real (r,l,bs) -> "real " ^ str_of_bs bs ^ " in (" ^ str_of_real r ^ "," ^ str_of_real l ^ ")"
 	  | Sigma (s,bs) -> "sigma " ^ str_of_bs bs ^ " in " ^ str_of_sigma s 
 	  | Tuple lst -> "(" ^ (String.concat ", " (List.map string_of_expr lst)) ^ ")"
 	  | Uncompiled e -> "["^(S.string_of_expr e)^"]"
@@ -154,7 +154,7 @@ struct
     | EnvRVar x -> S.string_of_name x 
     | EnvDRVar x -> S.string_of_name x ^ "'"
     | BsRVar x -> S.string_of_name x 
-    | Binary (_,r1,r2) -> (str_of_real r1) ^ "°" ^ (str_of_real r2)
+    | Binary (op,r1,r2) -> (str_of_real r1) ^ "°" ^ (str_of_real r2)
     | Unary (_,r1) -> str_of_real r1    
     | ConstReal c -> I.to_string c
   and str_of_sigma s = match s with
