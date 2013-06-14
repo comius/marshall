@@ -8,10 +8,10 @@ struct
   let lower_real ~prec ~round env bs r =
     let rec approx r =
 	match r with 
-	| EnvRVar x -> List.assoc x env
-	| EnvDRVar x -> error "not expecting a derivative"
-	| BsRVar x -> (match (List.assoc x bs) with
-	    | Cut (_,i,_,_,_,_) -> i
+	| EnvRVar i -> List.nth env i
+	| EnvDRVar i -> error "not expecting a derivative"
+	| BsRVar i -> (match (List.nth bs i) with
+	    | Cut (i,_,_,_,_) -> i
 	    | _ -> error "not a cut")
 	| Binary (binaryop,r1,r2) -> binaryop ~prec ~round (approx r1) (approx r2)
 	| Unary (unaryop,r) -> unaryop ~prec ~round (approx r)
@@ -21,10 +21,10 @@ struct
   let upper_real ~prec ~round env bs r =
     let rec approx r =
 	match r with 
-	| EnvRVar x -> I.flip (List.assoc x env)
-	| EnvDRVar x -> error "not expecting a derivative"
-	| BsRVar x -> (match (List.assoc x bs) with
-	    | Cut (_,i,_,_,_,_) -> I.flip i
+	| EnvRVar i -> I.flip (List.nth env i)
+	| EnvDRVar i -> error "not expecting a derivative"
+	| BsRVar i -> (match (List.nth bs i) with
+	    | Cut (i,_,_,_,_) -> I.flip i
 	    | _ -> error "not a cut")
 	| Binary (binaryop,r1,r2) -> binaryop ~prec ~round (approx r1) (approx r2)
 	| Unary (unaryop,r) -> unaryop ~prec ~round (approx r)
@@ -33,13 +33,13 @@ struct
 
   let rec lower ~prec env bs s =
     match s with 
-    | BsBVar x -> (match (List.assoc x bs) with
-	| Exists (x,lst,s) -> 
+    | BsBVar i -> (match (List.nth bs i) with
+	| Exists (lst,s) -> 
 	  List.fold_left (||) false 
-	    (List.rev_map (fun (i,bs) -> lower ~prec ((x,I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)	    
-	| Forall (x,lst,s) ->
+	    (List.rev_map (fun (i,bs) -> lower ~prec ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)	    
+	| Forall (lst,s) ->
 	  List.fold_left (&&) true 
-	    (List.rev_map (fun (i,bs) -> lower ~prec ((x,i)::env) bs s) lst)
+	    (List.rev_map (fun (i,bs) -> lower ~prec (i::env) bs s) lst)
 	| _ -> error "not a sigma")
     | And lst -> List.fold_left (&&) true (List.rev_map (lower ~prec env bs) lst)
     | Or lst -> List.fold_left (||) false (List.rev_map (lower ~prec env bs) lst)
@@ -50,13 +50,13 @@ struct
  
   let rec upper ~prec env bs s =    
     match s with 
-    | BsBVar x -> (match (List.assoc x bs) with
-	| Exists (x,lst,s) -> 
+    | BsBVar i -> (match (List.nth bs i) with
+	| Exists (lst,s) -> 
 	  List.fold_left (||) false 
-	    (List.rev_map (fun (i,bs) -> upper ~prec ((x,i)::env) bs s) lst)	    
-	| Forall (x,lst,s) ->
+	    (List.rev_map (fun (i,bs) -> upper ~prec ((i)::env) bs s) lst)	    
+	| Forall (lst,s) ->
 	  List.fold_left (&&) true 
-	    (List.rev_map (fun (i,bs) -> upper ~prec ((x,I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)
+	    (List.rev_map (fun (i,bs) -> upper ~prec ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)
 	| _ -> error "not a sigma")
     | And lst -> List.fold_left (&&) true (List.rev_map (upper ~prec env bs) lst)
     | Or  lst -> List.fold_left (||) false (List.rev_map (upper ~prec env bs) lst)
@@ -69,34 +69,34 @@ struct
   let rec refine ~k ~prec env bslist =
     let refine1 bs =
       match bs with
-      | Exists (x,lst,s)->
+      | Exists (lst,s)->
 	let qlst = try 
 	  List.fold_left  (
 	    fun restail (i,bs)->
 	      let prec = make_prec prec i in 
-	      let q = refine ~k ~prec ((x,i)::env) bs in
-	      if lower ~prec ((x,i)::env) q s then raise (Break [(i,q)]) else
-		(if upper ~prec ((x,i)::env) q s then
+	      let q = refine ~k ~prec ((i)::env) bs in
+	      if lower ~prec ((i)::env) q s then raise (Break [(i,q)]) else
+		(if upper ~prec ((i)::env) q s then
 		    let i1, i2 = I.split prec 1 i in
 		      (i1,q)::(i2,q)::restail
 		else restail)) [] lst
 	  with Break(qlst)->qlst in
-	    Exists (x,qlst,s)
-      | Forall (x,lst,s) ->   
+	    Exists (qlst,s)
+      | Forall (lst,s) ->   
 	let qlst = try
 	  List.fold_left  (
 	    fun restail (i,bs)->
 	      let prec = make_prec prec i in 
-	      let q = refine ~k ~prec ((x,i)::env) bs in
-		if lower ~prec ((x,i)::env) q s then restail 
+	      let q = refine ~k ~prec ((i)::env) bs in
+		if lower ~prec ((i)::env) q s then restail 
 		else
-		  (if upper ~prec ((x,i)::env) q s then
+		  (if upper ~prec ((i)::env) q s then
 		      let i1, i2 = I.split prec 1 i in 
 			(i1,q)::(i2,q)::restail 
 		  else raise (Break [(i,q)]))) [] lst
 	  with Break(qlst)->qlst in
-	    Forall (x,qlst,s)
-      | Cut (x,i,bs1,bs2,s1,s2) ->
+	    Forall (qlst,s)
+      | Cut (i,bs1,bs2,s1,s2) ->
 	  let prec = make_prec prec i in
 	    (* To refine a cut [Cut(x,i,p1,p2)] we try to make the
 		interval [i] smaller and refine [p1] and [p2]. *)
@@ -104,14 +104,14 @@ struct
 	  let b = I.upper i in
 	    (* Bisection *)
 	  let m1, m2 = I.thirds prec k i in
-	  let a' = (if lower ~prec ((x,I.of_dyadic m1)::env) bs1 s1 then m1 else a) in
-	  let b' = (if lower ~prec ((x,I.of_dyadic m2)::env) bs2 s2 then m2 else b) in
+	  let a' = (if lower ~prec ((I.of_dyadic m1)::env) bs1 s1 then m1 else a) in
+	  let b' = (if lower ~prec ((I.of_dyadic m2)::env) bs2 s2 then m2 else b) in
 	  let j = I.make a' b' in       
-	  let env' = (x,j)::env in
+	  let env' = (j)::env in
 	  let q1 = refine ~k ~prec env' bs1 in
 	  let q2 = refine ~k ~prec env' bs2 in
-	  Cut (x,j,q1,q2,s1,s2)	  
-    in List.map (fun (x,bs) -> (x,refine1 bs)) bslist
+	  Cut (j,q1,q2,s1,s2)	  
+    in List.map refine1 bslist
 
   let string_of_expr e =
     match e with

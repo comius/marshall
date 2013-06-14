@@ -6,15 +6,15 @@ struct
   module R = Region.Make(D)
   open C
 
-  let dummy = S.fresh_name "dummy"
+  let dummy = -1
 
   let lower_real ~prec ~round y env bs r =
     let rec approx r =
 	match r with 
-	| EnvRVar x -> List.assoc x env
+	| EnvRVar x -> List.nth env x
 	| EnvDRVar x -> if x == y then I.of_dyadic D.one else I.of_dyadic D.zero
-	| BsRVar x -> (match (List.assoc x bs) with
-	    | Cut (_,i,_,_,_,_) -> i
+	| BsRVar x -> (match (List.nth bs x) with
+	    | Cut (i,_,_,_,_) -> i
 	    | _ -> error "not a cut")
 	| Binary (binaryop,r1,r2) -> binaryop ~prec ~round (approx r1) (approx r2)
 	| Unary (unaryop,r) -> unaryop ~prec ~round (approx r)
@@ -24,10 +24,10 @@ struct
   let upper_real ~prec ~round y env bs r =
     let rec approx r =
 	match r with 
-	| EnvRVar x -> I.flip (List.assoc x env)
+	| EnvRVar x -> I.flip (List.nth env x)
 	| EnvDRVar x -> if x == y then I.of_dyadic D.one else I.of_dyadic D.zero
-	| BsRVar x -> (match (List.assoc x bs) with
-	    | Cut (_,i,_,_,_,_) -> I.flip i
+	| BsRVar x -> (match (List.nth bs x) with
+	    | Cut (i,_,_,_,_) -> I.flip i
 	    | _ -> error "not a cut")
 	| Binary (binaryop,r1,r2) -> binaryop ~prec ~round (approx r1) (approx r2)
 	| Unary (unaryop,r) -> unaryop ~prec ~round (approx r)
@@ -48,10 +48,15 @@ struct
   		R.open_right_ray a'
 
   let getx x env =
-    try  (List.assoc x env)
-    with Not_found -> I.bottom
+    if x<0 then I.bottom else List.nth env x    
 
   let gety y env = R.of_interval (getx y env)
+
+  let rec putenv i xi env =
+    match xi,env with
+      | 0,hd::tl -> i::tl 
+      | _,hd::tl -> hd::(putenv i (xi-1) tl)
+      | _,[] -> error "putenv"
 
   let lower_gtzero ~prec x env bs e l =
     (* For infinite intervals we give up. We could try to do something
@@ -66,12 +71,12 @@ struct
                    if D.positive (I.lower j) then R.of_interval i else R.empty) in
     if not (I.proper i) then
       old_est ()
-    else
+    else      
       let x1 = I.lower i in
       let x2 = I.upper i in
-      let y1 = I.lower (lower_real ~prec ~round:D.down x ((x,I.of_dyadic x1)::env) bs e) in 
-      let y2 = I.lower (lower_real ~prec ~round:D.down x ((x,I.of_dyadic x2)::env) bs e) in 
-      let lif = lower_real ~prec ~round:D.down x env bs l in  (* Lifschitz constant as an interval *)      	
+      let y1 = I.lower (lower_real ~prec ~round:D.down x (putenv (I.of_dyadic x1) x env) bs e) in 
+      let y2 = I.lower (lower_real ~prec ~round:D.down x (putenv (I.of_dyadic x2) x env) bs e) in 
+      let lif = lower_real ~prec ~round:D.down x (putenv i x env) bs l in  (* Lifschitz constant as an interval *)      	
 	if not (I.proper lif) then old_est () else
 	R.intersection (R.of_interval i) (R.union
 	  (estimate_endpoint prec x1 y1 (I.lower lif)) (* estimate at i.lower *)
@@ -90,25 +95,25 @@ struct
                   if D.positive (I.lower j) then R.of_interval i else R.empty) in
     if not (I.proper i) then
       old_est ()
-    else
+    else      
       let x1 = I.lower i in
       let x2 = I.upper i in
-      let y1 = I.lower (upper_real ~prec ~round:D.down x ((x,I.of_dyadic x1)::env) bs e) in 
-      let y2 = I.lower (upper_real ~prec ~round:D.down x ((x,I.of_dyadic x2)::env) bs e) in 
-      let lif = upper_real ~prec ~round:D.down x ((x,i)::env) bs l in  (* Lifschitz constant as an interval *)                       
+      let y1 = I.lower (upper_real ~prec ~round:D.down x (putenv (I.of_dyadic x1) x env) bs e) in 
+      let y2 = I.lower (upper_real ~prec ~round:D.down x (putenv (I.of_dyadic x2) x env) bs e) in 
+      let lif = upper_real ~prec ~round:D.down x (putenv i x env) bs l in  (* Lifschitz constant as an interval *)                       
 	if not (I.proper (I.flip lif)) then old_est () else
 	  R.intersection (R.of_interval i) (R.union (estimate_endpoint prec x1 y1 (I.lower lif))
 		 (estimate_endpoint prec x2 y2 (I.upper lif)))
 
   let rec lower ~prec y env bs s =
     match s with 
-    | BsBVar x -> (match (List.assoc x bs) with
-	| Exists (x,lst,s) -> 
+    | BsBVar x -> (match (List.nth bs x) with
+	| Exists (lst,s) -> 
 	  List.fold_left (R.union) R.empty 
-	    (List.rev_map (fun (i,bs) -> lower ~prec y ((x,I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)	    
-	| Forall (x,lst,s) ->
+	    (List.rev_map (fun (i,bs) -> lower ~prec (y+1) ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)	    
+	| Forall (lst,s) ->
 	  List.fold_left (R.intersection) (gety y env)
-	    (List.rev_map (fun (i,bs) -> lower ~prec y ((x,i)::env) bs s) lst)
+	    (List.rev_map (fun (i,bs) -> lower ~prec (y+1) ((i)::env) bs s) lst)
 	| _ -> error "not a sigma")
     | And lst -> List.fold_left (R.intersection) (gety y env) (List.rev_map (lower ~prec y env bs) lst)
     | Or lst -> List.fold_left (R.union) R.empty (List.rev_map (lower ~prec y env bs) lst)
@@ -118,13 +123,13 @@ struct
  
   let rec upper ~prec y env bs s =    
     match s with 
-    | BsBVar x -> (match (List.assoc x bs) with
-	| Exists (x,lst,s) -> 
+    | BsBVar x -> (match (List.nth bs x) with
+	| Exists (lst,s) -> 
 	  List.fold_left (R.union) R.empty
-	    (List.rev_map (fun (i,bs) -> upper ~prec y ((x,i)::env) bs s) lst)	    
-	| Forall (x,lst,s) ->
+	    (List.rev_map (fun (i,bs) -> upper ~prec (y+1) ((i)::env) bs s) lst)	    
+	| Forall (lst,s) ->
 	  List.fold_left (R.intersection) (gety y env) 
-	    (List.rev_map (fun (i,bs) -> upper ~prec y ((x,I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)
+	    (List.rev_map (fun (i,bs) -> upper ~prec (y+1) ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)
 	| _ -> error "not a sigma")
     | And lst -> List.fold_left (R.intersection) (gety y env) (List.rev_map (upper ~prec y env bs) lst)
     | Or  lst -> List.fold_left (R.union) R.empty (List.rev_map (upper ~prec y env bs) lst)
@@ -140,41 +145,41 @@ struct
   let rec refine ~k ~prec env bslist =
     let refine1 bs =
       match bs with
-      | Exists (x,lst,s)->
+      | Exists (lst,s)->
 	let qlst = try
 	  List.fold_left  (
 	    fun restail (i,bs)->
 	      let prec = make_prec prec i in 
-	      let q = refine ~k ~prec ((x,i)::env) bs in
+	      let q = refine ~k ~prec ((i)::env) bs in
 	      let i1, i2 = I.split prec 1 i in
-		if R.is_inhabited (lower ~prec x ((x,i1)::env) q s) then raise (Break [(i1,q)]) 
+		if R.is_inhabited (lower ~prec 0 ((i1)::env) q s) then raise (Break [(i1,q)]) 
 		else
-		  if R.is_inhabited (lower ~prec x ((x,i2)::env) q s) then raise (Break [(i2,q)]) 
+		  if R.is_inhabited (lower ~prec 0 ((i2)::env) q s) then raise (Break [(i2,q)]) 
 		  else
-		    let lst1 = R.to_closed_intervals (R.closure (upper ~prec x ((x,i1)::env) q s)) in
-		    let lst2 = R.to_closed_intervals (R.closure (upper ~prec x ((x,i2)::env) q s)) in
+		    let lst1 = R.to_closed_intervals (R.closure (upper ~prec 0 ((i1)::env) q s)) in
+		    let lst2 = R.to_closed_intervals (R.closure (upper ~prec 0 ((i2)::env) q s)) in
 		      (List.map (fun i -> (i,q)) (lst1@lst2))@restail		    	      
 	      ) [] lst 
 	  with Break (qlst) -> qlst in
-         Exists (x,qlst,s)
-      | Forall (x,lst,s) ->   	
+         Exists (qlst,s)
+      | Forall (lst,s) ->   	
 	let qlst = try 	
 	  List.fold_left  (
 	    fun restail (i,bs)->
 	      let prec = make_prec prec i in 
-	      let q = refine ~k ~prec ((x,i)::env) bs in
+	      let q = refine ~k ~prec ((i)::env) bs in
 	      let i1, i2 = I.split prec 1 i in
-		if R.is_inhabited (comp i1 (upper ~prec x ((x,i1)::env) q s)) then raise (Break [(i1,q)])
+		if R.is_inhabited (comp i1 (upper ~prec 0 ((i1)::env) q s)) then raise (Break [(i1,q)])
 		else
-		  if R.is_inhabited (comp i2 (upper ~prec x ((x,i2)::env) q s)) then raise (Break [(i2,q)])
+		  if R.is_inhabited (comp i2 (upper ~prec 0 ((i2)::env) q s)) then raise (Break [(i2,q)])
 		  else		  
-		      let lst1 = R.to_closed_intervals (R.closure (comp i1 (lower ~prec x ((x,i1)::env) q s))) in
-		      let lst2 = R.to_closed_intervals (R.closure (comp i2 (lower ~prec x ((x,i2)::env) q s))) in
+		      let lst1 = R.to_closed_intervals (R.closure (comp i1 (lower ~prec 0 ((i1)::env) q s))) in
+		      let lst2 = R.to_closed_intervals (R.closure (comp i2 (lower ~prec 0 ((i2)::env) q s))) in
 			(List.map (fun i -> (i,q)) (lst1@lst2))@restail		   		  
 	    ) [] lst
 	  with Break (qlst) -> qlst in
-                    Forall (x,qlst,s)
-      | Cut (x,i,bs1,bs2,s1,s2) ->
+                    Forall (qlst,s)
+      | Cut (i,bs1,bs2,s1,s2) ->
 	  let prec = make_prec prec i in
 	    (* To refine a cut [Cut(x,i,p1,p2)] we try to make the
 		interval [i] smaller and refine [p1] and [p2]. *)
@@ -182,15 +187,15 @@ struct
 	  let b = I.upper i in
 	    (* Bisection *)
 	  let m1, m2 = I.thirds prec k i in
-	  let a' = (if R.is_inhabited (lower ~prec dummy ((x,I.of_dyadic m1)::env) bs1 s1) then m1 else a) in
-	  let b' = (if R.is_inhabited (lower ~prec dummy ((x,I.of_dyadic m2)::env) bs2 s2) then m2 else b) in
+	  let a' = (if R.is_inhabited (lower ~prec dummy ((I.of_dyadic m1)::env) bs1 s1) then m1 else a) in
+	  let b' = (if R.is_inhabited (lower ~prec dummy ((I.of_dyadic m2)::env) bs2 s2) then m2 else b) in
 	  let j = I.make a' b' in       
 	     
 	  (* Newton's method *)
-	  let l1 = lower ~prec x ((x,j)::env) bs1 s1 in
-	  let u1 = comp j (upper ~prec x ((x,j)::env) bs1 s1) in	  
-	  let l2 = lower ~prec x ((x,j)::env) bs2 s2 in  	  
-	  let u2 = comp j (upper ~prec x ((x,j)::env) bs2 s2) in
+	  let l1 = lower ~prec 0 ((j)::env) bs1 s1 in
+	  let u1 = comp j (upper ~prec 0 ((j)::env) bs1 s1) in	  
+	  let l2 = lower ~prec 0 ((j)::env) bs2 s2 in  	  
+	  let u2 = comp j (upper ~prec 0 ((j)::env) bs2 s2) in
   
 	  let a'' = D.max a' (D.max (R.supremum l1) (R.supremum u2)) in
 	  let b'' = D.min b' (D.min (R.infimum  l2) (R.infimum u1)) in
@@ -198,14 +203,14 @@ struct
 	      (match D.cmp a'' b'' with
 		  | `less ->
 		      (* The new interval *)		    
-		    let env' = (x,l)::env in
+		    let env' = (l)::env in
 		    let q1 = refine ~k ~prec env' bs1 in
 		    let q2 = refine ~k ~prec env' bs2 in
 (*		    print_endline ("Cut: " ^ (S.string_of_name x) ^ ":" ^ (I.to_string i) ^ ":" ^ (I.to_string j) ^ (I.to_string l) ^ (S.string_of_expr q1) ^ (S.string_of_expr q2));*)
-		      Cut (x, l, q1, q2, s1, s2)
+		      Cut (l, q1, q2, s1, s2)
 		  | `equal ->
 		      (* We found an exact value *)
-		      Cut (x, l, bs1, bs2, s1, s2)
+		      Cut (l, bs1, bs2, s1, s2)
 		  | `greater ->
 		      (* We have a backwards cut. Do nothing. Someone should think
 			 whether this is ok. It would be nice if cuts could be
@@ -218,7 +223,7 @@ struct
 	  let q1 = refine ~k ~prec env' bs1 in
 	  let q2 = refine ~k ~prec env' bs2 in
 	  Cut (x,j,q1,q2,s1,s2)	  *)
-    in List.map (fun (x,bs) -> (x,refine1 bs)) bslist
+    in List.map refine1 bslist
 
   let string_of_expr e =
     match e with
@@ -237,7 +242,7 @@ struct
         begin
           print_endline ("--------------------------------------------------\n" ^
                            "Iteration: " ^ string_of_int k ^ "\n" ^
-                           C.string_of_expr e' ^ "\n" ^
+                           C.str_of_expr e' ^ "\n" ^
                            "Press Enter to continue " 
                         ) ;
           ignore (read_line ())   
