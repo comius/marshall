@@ -31,13 +31,18 @@ struct
 	| ConstReal c -> I.flip c
     in approx r
 
+  let rec split ~prec il =
+    match il with
+      | (i,sp,bs)::tail -> (List.map (fun i -> (i,bs)) (I.lsplit ~prec sp [i]))@(split ~prec tail)
+      | [] -> []
+
   let rec lower ~prec env bs s =
     match s with 
     | BsBVar i -> (match (List.nth bs i) with
-	| Exists (lst,s) -> 
+	| Exists (lst,s) -> let lst = split ~prec lst in
 	  List.fold_left (||) false 
 	    (List.rev_map (fun (i,bs) -> lower ~prec ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)	    
-	| Forall (lst,s) ->
+	| Forall (lst,s) -> let lst = split ~prec lst in
 	  List.fold_left (&&) true 
 	    (List.rev_map (fun (i,bs) -> lower ~prec (i::env) bs s) lst)
 	| _ -> error "not a sigma")
@@ -51,10 +56,10 @@ struct
   let rec upper ~prec env bs s =    
     match s with 
     | BsBVar i -> (match (List.nth bs i) with
-	| Exists (lst,s) -> 
+	| Exists (lst,s) -> let lst = split ~prec lst in
 	  List.fold_left (||) false 
 	    (List.rev_map (fun (i,bs) -> upper ~prec ((i)::env) bs s) lst)	    
-	| Forall (lst,s) ->
+	| Forall (lst,s) -> let lst = split ~prec lst in
 	  List.fold_left (&&) true 
 	    (List.rev_map (fun (i,bs) -> upper ~prec ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)
 	| _ -> error "not a sigma")
@@ -64,7 +69,7 @@ struct
 	let i = upper_real ~prec ~round:D.up env bs r in D.positive (I.lower i)
     | ConstSigma c -> c
 
-  exception Break of (I.t * basesets) list
+  exception Break of (I.t * int * basesets) list
 
   let rec refine ~k ~prec env bslist =
     let refine1 bs =
@@ -72,28 +77,38 @@ struct
       | Exists (lst,s)->
 	let qlst = try 
 	  List.fold_left  (
-	    fun restail (i,bs)->
+	    fun restail (i,sp,bs)->
 	      let prec = make_prec prec i in 
 	      let q = refine ~k ~prec ((i)::env) bs in
-	      if lower ~prec ((i)::env) q s then raise (Break [(i,q)]) else
-		(if upper ~prec ((i)::env) q s then
-		    let i1, i2 = I.split prec 1 i in
-		      (i1,q)::(i2,q)::restail
-		else restail)) [] lst
-	  with Break(qlst)->qlst in
-	    Exists (qlst,s)
+	      let il = I.lsplit prec sp [i] in
+
+	      let r = List.fold_left (fun r i -> 
+		if (lower ~prec (i::env) q s) then raise (Break [(i,1,q)])
+		else if upper ~prec (i::env) q s then i::r else r
+		  ) [] il in	      
+		match r with 
+		  | [] -> restail
+		  | [i] -> (i,sp+1,q) :: restail
+		  | lst -> (List.map (fun i-> (i,1,q)) lst) @ restail	    	     
+	   ) [] lst
+	  with Break (qlst) -> qlst in Exists (qlst,s)
       | Forall (lst,s) ->   
 	let qlst = try
 	  List.fold_left  (
-	    fun restail (i,bs)->
+	    fun restail (i,sp,bs)->
 	      let prec = make_prec prec i in 
 	      let q = refine ~k ~prec ((i)::env) bs in
-		if lower ~prec ((i)::env) q s then restail 
+              let il = I.lsplit prec sp [i] in
+              let r = List.fold_left (fun r i ->
+		if lower ~prec ((i)::env) q s then r 
 		else
-		  (if upper ~prec ((i)::env) q s then
-		      let i1, i2 = I.split prec 1 i in 
-			(i1,q)::(i2,q)::restail 
-		  else raise (Break [(i,q)]))) [] lst
+		  (if upper ~prec ((i)::env) q s then i::r 
+		  else raise (Break [(i,1,q)]))) [] il in
+                  match r with
+                   | [] -> restail
+       		   | [i] -> (i,sp+1,q) :: restail
+		   | lst -> (List.map (fun i-> (i,1,q)) lst) @ restail	    	     
+	   ) [] lst
 	  with Break(qlst)->qlst in
 	    Forall (qlst,s)
       | Cut (i,bs1,bs2,s1,s2) ->

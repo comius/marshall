@@ -270,4 +270,11 @@ struct
     let i1, i2 = split prec k i in
       midpoint prec k i1, midpoint prec k i2
 
+  (* Split an interval list into 2^s smaller ones. *)
+  
+    let rec lsplit ~prec s il =
+    match s with
+      | 0 -> il
+      | _ -> lsplit ~prec (s-1) (List.fold_left (fun r i -> let i1,i2 = split ~prec 1 i in i1::i2::r) [] il)      
+
 end;;

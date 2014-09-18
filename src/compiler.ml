@@ -23,8 +23,8 @@ struct
     | ConstSigma of bool
   and basesets = bs list
   and bs = 
-    | Exists of (I.t * basesets) list (*ref*) * sigmaexpr
-    | Forall of (I.t * basesets) list (*ref*) * sigmaexpr
+    | Exists of (I.t * int * basesets) list (*ref*) * sigmaexpr
+    | Forall of (I.t * int * basesets) list (*ref*) * sigmaexpr
     | Cut of I.t (*ref*) * basesets * basesets * sigmaexpr * sigmaexpr  
   and binaryop = prec:int -> round:D.rounding_mode -> I.t -> I.t -> I.t
   and unaryop = prec:int -> round:D.rounding_mode -> I.t -> I.t
@@ -152,10 +152,10 @@ struct
 	    Or r, bs	    
 	| S.Exists (x, i, e) -> 	    
 	    let s,bs = compile_sigma (newenv env x) e 0 in
-	    BsBVar bs0, [Exists ([i,bs],s)]
+	    BsBVar bs0, [Exists ([i,1,bs],s)]
 	| S.Forall (x, i, e) -> 
 	    let s,bs = compile_sigma (newenv env x) e 0 in	    
-	    BsBVar bs0, [Forall ([i,bs],s)]
+	    BsBVar bs0, [Forall ([i,1,bs],s)]
 	| _ -> (match compile env e with
 	    | Sigma (s,bs) -> s,bs
 	    | _ -> error ("typecheck" ^ S.string_of_expr e))           
@@ -168,7 +168,7 @@ struct
 	  | Tuple lst -> "(" ^ (String.concat ", " (List.map string_of_expr lst)) ^ ")"
 	  | Uncompiled e -> "["^(S.string_of_expr e)^"]"
    and str_of_bs bs = "(" ^ String.concat ", " (List.map str_of_env bs) ^ ")"
-   and str_of_ibs ibslst = "(" ^ String.concat ", " (List.map (fun (i,bs) -> I.to_string i ^ str_of_bs bs) ibslst) ^ ")"
+   and str_of_ibs ibslst = "(" ^ String.concat ", " (List.map (fun (i,_,bs) -> I.to_string i ^ str_of_bs bs) ibslst) ^ ")"
    and str_of_env env = match env with
       | Forall (ibs, s) -> " forall: " ^ str_of_ibs ibs ^ " in " ^ str_of_sigma s
       | Exists (ibs, s) -> " exists: " ^ str_of_ibs ibs ^ " in " ^ str_of_sigma s
@@ -197,12 +197,12 @@ let rec str_of_expr e =
 	  | Tuple lst -> "(" ^ (String.concat ", " (List.map string_of_expr lst)) ^ ")"
 	  | Uncompiled e -> "["^(S.string_of_expr e)^"]"
    and str_of_bs bs = if List.length bs > 0 then  "(" ^ String.concat ", " (List.map str_of_env bs) ^ ")" else ""
-   and str_of_ibs ibslst = if List.length ibslst > 0 then "(" ^ String.concat ", " (List.map (fun (i,bs) -> I.to_string i ^ str_of_bs bs) ibslst) ^ ")"
+   and str_of_ibs ibslst = if List.length ibslst > 0 then "(" ^ String.concat ", " (List.map (fun (i,sp,bs) -> I.to_string i ^ "/" ^ (string_of_int sp) ^ str_of_bs bs) ibslst) ^ ")"
       else ""
    and str_of_env env = match env with
       | Forall (ibs, s) -> str_of_ibs ibs 
       | Exists (ibs, s) -> str_of_ibs ibs 
-      | Cut (i, bs1, bs2,s1,s2) -> if List.length bs1 > 0 || List.length bs2 > 0 then
+      | Cut (i, bs1, bs2,s1,s2) -> (I.to_string i) ^ if List.length bs1 > 0 || List.length bs2 > 0 then
 	    " left " ^ str_of_bs bs1 ^
 	    " right " ^ str_of_bs bs2 else ""
 

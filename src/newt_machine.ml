@@ -6,7 +6,7 @@ struct
   module R = Region.Make(D)
   open C
 
-  let dummy = -1
+  let dummy = 0
 
   let lower_real ~prec ~round y env bs r =
     let rec approx r =
@@ -48,7 +48,7 @@ struct
   		R.open_right_ray a'
 
   let getx x env =
-    if x<0 then I.bottom else List.nth env x    
+    if x<0 || x>=List.length env then I.bottom else List.nth env x    
 
   let gety y env = R.of_interval (getx y env)
 
@@ -68,7 +68,7 @@ struct
     let i = getx x env in
     let old_est () = 
 		 (let j = lower_real ~prec ~round:D.down x env bs e in        
-                   if D.positive (I.lower j) then R.of_interval i else R.empty) in
+                   if D.positive (I.lower j) then R.of_interval i else R.empty) in    
     if not (I.proper i) then
       old_est ()
     else      
@@ -77,10 +77,10 @@ struct
       let y1 = I.lower (lower_real ~prec ~round:D.down x (putenv (I.of_dyadic x1) x env) bs e) in 
       let y2 = I.lower (lower_real ~prec ~round:D.down x (putenv (I.of_dyadic x2) x env) bs e) in 
       let lif = lower_real ~prec ~round:D.down x (putenv i x env) bs l in  (* Lifschitz constant as an interval *)      	
-	if not (I.proper lif) then old_est () else
+	if not (I.proper lif) then old_est () else	
 	R.intersection (R.of_interval i) (R.union
 	  (estimate_endpoint prec x1 y1 (I.lower lif)) (* estimate at i.lower *)
-	  (estimate_endpoint prec x2 y2 (I.upper lif)))  
+	  (estimate_endpoint prec x2 y2 (I.upper lif))) 
 
 
   let upper_gtzero ~prec x env bs e l =
@@ -105,13 +105,18 @@ struct
 	  R.intersection (R.of_interval i) (R.union (estimate_endpoint prec x1 y1 (I.lower lif))
 		 (estimate_endpoint prec x2 y2 (I.upper lif)))
 
+  let rec split ~prec il =
+    match il with
+      | (i,sp,bs)::tail -> (List.map (fun i -> (i,bs)) (I.lsplit ~prec sp [i]))@(split ~prec tail)
+      | [] -> []
+
   let rec lower ~prec y env bs s =
     match s with 
     | BsBVar x -> (match (List.nth bs x) with
-	| Exists (lst,s) -> 
+	| Exists (lst,s) -> let lst = split ~prec lst in 	  
 	  List.fold_left (R.union) R.empty 
 	    (List.rev_map (fun (i,bs) -> lower ~prec (y+1) ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)	    
-	| Forall (lst,s) ->
+	| Forall (lst,s) -> let lst = split ~prec lst in	  
 	  List.fold_left (R.intersection) (gety y env)
 	    (List.rev_map (fun (i,bs) -> lower ~prec (y+1) ((i)::env) bs s) lst)
 	| _ -> error "not a sigma")
@@ -124,10 +129,10 @@ struct
   let rec upper ~prec y env bs s =    
     match s with 
     | BsBVar x -> (match (List.nth bs x) with
-	| Exists (lst,s) -> 
+	| Exists (lst,s) -> let lst = split ~prec lst in	  
 	  List.fold_left (R.union) R.empty
 	    (List.rev_map (fun (i,bs) -> upper ~prec (y+1) ((i)::env) bs s) lst)	    
-	| Forall (lst,s) ->
+	| Forall (lst,s) -> let lst = split ~prec lst in	  
 	  List.fold_left (R.intersection) (gety y env) 
 	    (List.rev_map (fun (i,bs) -> upper ~prec (y+1) ((I.of_dyadic (I.midpoint prec 1 i))::env) bs s) lst)
 	| _ -> error "not a sigma")
@@ -138,7 +143,7 @@ struct
     | ConstSigma c -> if c then gety y env else R.empty
 
 
-  exception Break of (I.t * basesets) list
+  exception Break of (I.t * int * basesets) list
 
   let comp i r = R.intersection (R.of_interval i) (R.complement r)
 
@@ -148,34 +153,40 @@ struct
       | Exists (lst,s)->
 	let qlst = try
 	  List.fold_left  (
-	    fun restail (i,bs)->
+	    fun restail (i,sp,bs)->
 	      let prec = make_prec prec i in 
 	      let q = refine ~k ~prec ((i)::env) bs in
-	      let i1, i2 = I.split prec 1 i in
-		if R.is_inhabited (lower ~prec 0 ((i1)::env) q s) then raise (Break [(i1,q)]) 
-		else
-		  if R.is_inhabited (lower ~prec 0 ((i2)::env) q s) then raise (Break [(i2,q)]) 
-		  else
-		    let lst1 = R.to_closed_intervals (R.closure (upper ~prec 0 ((i1)::env) q s)) in
-		    let lst2 = R.to_closed_intervals (R.closure (upper ~prec 0 ((i2)::env) q s)) in
-		      (List.map (fun i -> (i,q)) (lst1@lst2))@restail		    	      
-	      ) [] lst 
+	      let il = I.lsplit prec sp [i] in
+	      let r = List.fold_left (fun r i -> 
+		if R.is_inhabited (lower ~prec 0 (i::env) q s) then raise (Break [(i,1,q)])
+		else 
+		  R.union r (R.closure (upper ~prec 0 (i::env) q s))
+		  ) R.empty il in
+	      let lst = R.to_closed_intervals r in
+		match lst with 
+		  | [] -> restail
+		  | [i] -> (i,sp+1,q) :: restail
+		  | lst -> (List.map (fun i-> (i,1,q)) lst) @ restail	      
+	    ) [] lst
 	  with Break (qlst) -> qlst in
          Exists (qlst,s)
       | Forall (lst,s) ->   	
 	let qlst = try 	
 	  List.fold_left  (
-	    fun restail (i,bs)->
+	    fun restail (i,sp,bs)->
 	      let prec = make_prec prec i in 
 	      let q = refine ~k ~prec ((i)::env) bs in
-	      let i1, i2 = I.split prec 1 i in
-		if R.is_inhabited (comp i1 (upper ~prec 0 ((i1)::env) q s)) then raise (Break [(i1,q)])
-		else
-		  if R.is_inhabited (comp i2 (upper ~prec 0 ((i2)::env) q s)) then raise (Break [(i2,q)])
-		  else		  
-		      let lst1 = R.to_closed_intervals (R.closure (comp i1 (lower ~prec 0 ((i1)::env) q s))) in
-		      let lst2 = R.to_closed_intervals (R.closure (comp i2 (lower ~prec 0 ((i2)::env) q s))) in
-			(List.map (fun i -> (i,q)) (lst1@lst2))@restail		   		  
+	      let il = I.lsplit prec sp [i] in	      
+	      let r = List.fold_left (fun r i -> 
+		if R.is_inhabited (comp i (upper ~prec 0 (i::env) q s)) then raise (Break [(i,1,q)])
+		else 
+		  R.union r (R.closure (comp i (lower ~prec 0 (i::env) q s)))
+		  ) R.empty il in
+	      let lst = R.to_closed_intervals r in
+		match lst with 
+		  | [] -> restail
+		  | [i] -> (i,sp+1,q) :: restail
+		  | lst -> (List.map (fun i-> (i,1,q)) lst) @ restail	      
 	    ) [] lst
 	  with Break (qlst) -> qlst in
                     Forall (qlst,s)
@@ -256,7 +267,7 @@ struct
               else
                 loop (k+1) (make_prec (p+3) (I.make D.zero !target_precision)) (Real (r,l,refine ~k ~prec:p [] bs))
         | Sigma (s,bs) ->
-          if R.is_inhabited (lower ~prec:p dummy [] bs s) then (e', Sigma (s,bs))
+          if R.is_inhabited (lower ~prec:p dummy [] bs s) then (e', Sigma (s,bs)) 
           else 
             (if R.is_inhabited (upper ~prec:p dummy [] bs s) then
               loop (k+1) (p+1) (Sigma (s,refine ~k ~prec:p [] bs))
